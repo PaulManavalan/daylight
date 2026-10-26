@@ -1,3 +1,5 @@
+> Implementation update: Calendar, recurring protected time, editable study preferences, local scheduling, and check-ins now run in the browser. See README.md for current behavior and limitations. The transactional cloud scheduling and account-timezone sections below describe the future architecture, not currently active persistence. Optional AI advises ordering through an authenticated server route; the pure engine validates all placements.
+
 # Daylight product and technical plan
 
 ## Product principles

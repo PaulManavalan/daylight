@@ -1,67 +1,46 @@
-> Implementation update: Calendar, recurring protected time, editable study preferences, local scheduling, and check-ins now run in the browser. See README.md for current behavior and limitations. The transactional cloud scheduling and account-timezone sections below describe the future architecture, not currently active persistence. Optional AI advises ordering through an authenticated server route; the pure engine validates all placements.
+# Daylight architecture
 
-# Daylight product and technical plan
+Daylight is a Next.js / React / TypeScript student planner. The primary experience is free and local: task capture, protected commitments, scheduling, manual control, and adaptive check-ins require no model provider or account.
 
-## Product principles
+## State and persistence
 
-The central screen is a calm task database, organized by subject. Capture should take seconds. Scheduling must leave room for school, robotics, sport, family, sleep, and breaks. The app must tell the student when work cannot fit, rather than fabricate a feasible-looking plan.
+Tasks use the existing repository interface: browser-local demo records or Supabase tasks behind authenticated, owner-only RLS. Signing in does not silently migrate demo data. Planning state is kept separately per browser/account identity under `daylight.planning.v1.<owner>`.
 
-## Architecture
+A planning snapshot contains preferences, recurring protected-time definitions, study sessions, set-aside task IDs, the last 50 check-ins, a rolling 14-day work-credit record, and the latest plan report. UTC ISO strings store concrete times; work windows and recurrence use the browser's local calendar/timezone, including DST. Account timezone editing and cross-device planning sync are not implemented.
 
-One Next.js App Router app, TypeScript, Tailwind, owned shadcn/ui components, React state, and Supabase Auth/Postgres. The current client loads only the signed-in user's tasks through RLS. A repository interface keeps local demo data separate from real accounts. Shared Zod validation protects normal input; SQL constraints and RLS enforce security for direct API requests too.
+`PlanningStore` validates snapshots with Zod, retains a last-known-valid backup, and compares the current raw snapshot before saving to reject stale writes. Invalid primary data can recover from a valid backup with a notice. If both are unreadable, data stays intact and the UI offers a raw recovery download. Exports include tasks and planning; importing exported files is not implemented.
 
-Upcoming scheduling and AI endpoints run server-side and validate the authenticated user with Supabase SSR. AI credentials and Google refresh tokens never enter browser bundles or task records. No service-role key is needed for ordinary user requests. AI is an optional adapter; basic scheduling remains free and deterministic. No realtime subscriptions are needed yet; another browser tab refreshes local data on storage events, and a cloud page reload fetches current records.
+## Explainable local planner
 
-## Finalized MVP model
+`src/lib/scheduling.ts` is a pure planning service. Given tasks, state, horizon, and an explicit current time, it produces sessions, unplaced minutes, changes, and warnings. Stable task/time-based IDs make identical inputs deterministic and keep calendar updates steady.
 
-| Entity | Important fields | Purpose |
-| --- | --- | --- |
-| User | Supabase auth.users.id, email | Managed identity; no duplicated password or auth table |
-| Task | user_id, title, description, subject, deadline, estimated_minutes, remaining_minutes, actual_minutes, priority, energy_level, status | The work itself, independent of placement |
-| TaskBlock | user_id, task_id, starts_at, ends_at, state, locked, explanation, schedule_version | One study session; a task can have many |
-| ProtectedTime | user_id, title, starts_at, ends_at, source, external_id | A concrete unavailable interval, including imported events |
-| CheckIn | user_id, task_id, question, response, outcome, added_minutes, resulting_action, created_at, answered_at | A recorded prompt, response, and applied change |
-| Preference | user_id, timezone, daily_capacity_minutes, work_windows, block_minutes, break_minutes, check_ins_enabled | Local working windows, energy patterns, limits |
+1. Expand recurring fixed commitments, including overnight occurrences, in local wall time.
+2. Preserve valid locked sessions and ongoing work. Explicit completion/skip can release selected work. Conflicting locks yield to hard constraints with warnings, and oversized locks shrink to remaining task minutes.
+3. Subtract commitments, transition recovery, sessions, and breaks from selected weekday/weekend study windows. Count confirmed progress and completed study segments against daily capacity and leave the daily reserve unfilled. Work credits link to completed segments so overlap is credited once; out-of-session work remains additive. The visible-history cap cannot restore previously consumed capacity.
+4. Reassess shared deadline demand and slack after each allocated session. Urgent deadlines lead, using the last usable window before each deadline (including the deep-work cutoff), so flexible work does not take a scarce early window. Otherwise priority, energy, and the task affected by a check-in influence order.
+5. Score free slots for earlier days, useful session lengths, focus-window match, and deadline risk. High-focus work stops at the configured evening cutoff. Stuck work begins with a short restart session.
+6. Validate rest between sessions, reserve longer recovery after sustained work, and stop at capacity. Report anything that cannot fit without silently extending deadlines or protected commitments.
 
-All interval endpoints and deadlines are timestamptz/UTC ISO strings. Work windows are local wall times in an IANA timezone. A deadline is an exact time, not an implicit midnight date. Editing displays it in the browser's local time. Before scheduling, use the account's explicit IANA timezone and handle DST with a timezone-aware library.
+Gentle pace adds breathing room and shorter sessions; compact pace favors earlier placement while retaining explicit limits. A default energy level applies only to tasks without their own setting. This is a bounded heuristic, not a guarantee of globally optimal packing. Infeasibility stays visible.
 
-Task status is not_started, in_progress, stuck, or done. “Need more time” is a check-in outcome that adjusts remaining_minutes, not a lasting status. Completing a task sets remaining_minutes to zero; reopening initially restores the original estimate and can be refined in the editor. Toggling completion does not invent actual work minutes.
+## Check-ins and recovery
 
-Protected-time recurrence is intentionally represented as concrete intervals for a planning horizon in the first calendar phase. Later add a recurrence source and expand occurrences in the user's timezone. Keep Google token storage separate in a private schema when integration is added.
+Done clears remaining work and reclaims future slots; an ongoing completed session is retained in a distinct calendar style. Making progress subtracts confirmed minutes and archives the reported portion of an active session. The recovery path uses the same archival function. Need more time and Stuck add minutes and replan the rolling week. Stuck creates a 15-minute restart. Skip keeps work set aside across later adaptive replans; Resume or a new explicit day/week plan includes it again.
 
-The foundation schema provides core records, foreign keys, RLS, ownership indexes, and positive-interval checks. Scheduler concurrency, cross-table interval conflict enforcement, and preferences JSON shape/timezone validation must be added with their respective endpoints before enabling those features. Scheduling writes must go through a transactional database function, not independent client inserts.
+Before a task mutation, the client persists a small check-in journal. It then saves the task, commits the planning snapshot, and clears the journal. A reload never repeats the task mutation: it checks the current task, merges a missing history entry once, and rebuilds the plan. If current task values do not match, those values and the journal are retained: another tab may still be saving. Calendar writes remain blocked until recovery or an explicit choice to keep current task values and archive the unapplied journal. A saved matching task update must be recovered rather than dismissed. This is recovery across two stores, not a cross-store database transaction.
 
-## User flows
+Other task edits refresh an existing plan. Task deletion removes related visible sessions/history. Planning storage events refresh the matching calendar; task storage events reload demo tasks without remounting the calendar on unrelated preference or backup writes.
 
-**Capture:** Click Add task, supply title and subject, estimate time, choose priority/focus needs, optionally set a deadline. Save to the inbox. Existing tasks open the same editor. Database filters and search narrow the list without changing stored work.
+## Daily workflow
 
-**Daily planning (next phase):** Read incomplete tasks, fixed events, existing blocks, and preferences. Show available capacity and suggested sessions. Warn about tasks that cannot meet their deadline. Save a validated plan with explanations.
+Inline quick capture uses the same task schema and repository as the full editor. Expanding Details preserves title, subject, and estimates; canceling returns to the draft. Today combines scheduled work (including undated tasks), fixed commitments, and recovery into a chronological agenda. It exposes direct check-ins and planning actions through one-shot calendar commands. Command IDs are monotonic and acknowledged on consumption; workspace switches clear pending commands.
 
-**Check-in (later):** In-app prompts appear at an appropriate break or when returning to the app, with cooldowns and quiet hours. Offer structured choices first, with optional free text: not started, in progress, stuck, done, or need more time. Structured choices require no model call. When stuck, suggest a smaller next step; never assume the task is completed.
+## Calendar interaction
 
-**Replanning (later):** Update status/remaining time and record the check-in atomically. Preserve completed, active, and locked blocks. Replan future movable blocks, prioritize hard deadlines, and show what moved and why. If capacity is insufficient, ask for a concrete adjustment such as reducing scope or changing a deadline.
+Day/week views share the same state. Fixed commitments are striped; flexible study blocks are colored; pins indicate manual placement; completed sessions have check marks and muted styling. Blocks open check-in, task editing, move, lock/unlock, and unschedule controls. Dragging previews its proposed time and constraint errors; valid manual drops are pinned by default. The move dialog is the keyboard/touch alternative. Day headings open the selected day. Empty periods, overloaded work, recovery errors, and set-aside work have explicit guidance.
 
-## Scheduling loop
+## Verification and boundaries
 
-1. Load the user's incomplete tasks and planning horizon, typically 7–14 days.
-2. Expand work windows in their timezone, subtract protected intervals, active/locked sessions, breaks, and elapsed time. Limit total daily work to capacity.
-3. Rank work by deadline feasibility/slack, priority, then due date. Prefer matching high-focus tasks to high-energy windows while keeping deadlines feasible.
-4. Split remaining minutes into bounded sessions. Place sessions before each deadline, include breaks, and leave buffer. Tasks without deadlines use spare capacity.
-5. Validate every interval against protected time, overlap, capacity, work windows, task minutes, and hard deadlines. Return unscheduled minutes and reasons when infeasible.
-6. Commit a new version transactionally using a per-user lock or optimistic version check; reject stale proposals and duplicate check-in submissions. Retain decision metadata for explanations and undo.
+The test suite exercises scheduling, adaptive changes, lock conflicts, deterministic output, old snapshot migration, storage failures, and task CRUD. The headless browser regression covers native dragging, invalid drops, preferences, completion, export, skip/resume, an interrupted save, offline local planning, and mobile layouts.
 
-AI can translate a reply like “I need another half hour” into a typed proposal, or explain the engine's stored reasons in natural language. The server validates the proposal before any mutation. Treat user task text as data, use structured output, constrain allowed task IDs, cap tokens and calls, and fall back to structured choices on errors. Never let a model bypass protected time or silently move a hard deadline.
-
-## Calendar and notifications
-
-The app database is the source of truth for tasks and scheduled study blocks. Google events import as protected intervals. Export task blocks into a dedicated calendar with stable external IDs and idempotent upserts. Reconcile deletions and changes, handle all-day events/timezones, and show sync failures without losing local task records. Google sync requires separate OAuth setup and permissions.
-
-Open-app check-ins can use a client timer plus persisted pending prompts. Check-ins while the app is closed require a later scheduled worker and notification channel, explicit opt-in, deduplication, and quiet hours. Do not promise background reminders from an ordinary browser tab.
-
-## Delivery phases
-
-1. **Foundation (implemented):** project setup, task schema/types, local demo, email auth wiring, task CRUD and filterable database.
-2. **Calendar:** fixed events, protected-time editing, preferences, split session rendering.
-3. **Scheduling:** pure engine with constraint tests, transactional persistence, explanation metadata, infeasibility UI.
-4. **Check-ins:** structured responses and remaining-time changes; replan with change summary.
-5. **Optional integrations:** AI interpretation/explanations, Google Calendar, then background reminders.
+The existing Supabase planning tables remain future cloud-sync infrastructure; this client does not write schedules to those tables. Google Calendar sync, background notifications, import, and full offline page installation/caching are outside this release. Local planning works without network access once the app is loaded. No paid-provider API route remains.

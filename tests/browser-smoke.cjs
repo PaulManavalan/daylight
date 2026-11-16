@@ -1,16 +1,24 @@
 // Uses the desktop app's bundled Playwright. Run after pnpm build and pnpm start.
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
+let playwright;
+try { playwright=require(process.env.PLAYWRIGHT_MODULE || "playwright"); }
+catch(error) {
+  if(process.env.PLAYWRIGHT_MODULE || !process.env.USERPROFILE)throw error;
+  playwright=require(require("node:path").join(process.env.USERPROFILE,".cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright"));
+}
+const {chromium}=playwright;
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 
-(async () => {
+async function smoke() {
   const browser = await chromium.launch({ channel: "msedge", headless: true });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 1080 } });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1080 }, timezoneId: "America/New_York" });
   await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.clock.setFixedTime(new Date("2026-10-27T14:30:00-04:00"));
+  const externalPlanningRequests=[];page.on("request",r=>{if(r.url().includes("/api/plan"))externalPlanningRequests.push(r.url());});
   const errors = [];
   page.on("pageerror", error => errors.push(error.message));
   try {
-    await page.goto("http://127.0.0.1:3000", { waitUntil: "networkidle" });
+    await page.goto(process.argv.includes("--serve") ? "http://127.0.0.1:3100" : "http://127.0.0.1:3000", { waitUntil: "networkidle" });
     await page.getByRole("button", { name: "Draft the history essay", exact: true }).waitFor();
     assert.equal(await page.locator("tbody tr").count(), 7);
     fs.mkdirSync("artifacts", { recursive: true });
@@ -34,10 +42,68 @@ const fs = require("node:fs");
     await page.getByRole("dialog").getByRole("button", { name: "Delete task", exact: true }).click();
     await page.getByText("Nothing here just yet.", { exact: true }).waitFor();
     await page.getByRole("combobox", { name: "Filter by subject", exact: true }).selectOption("all");
+    await page.getByRole("textbox",{name:"Quick task title",exact:true}).fill("Quick capture regression");
+    await page.getByRole("spinbutton",{name:"Quick estimate (minutes)",exact:true}).fill("25");
+    await page.getByRole("textbox",{name:"Quick task title",exact:true}).press("Enter");
+    await page.getByRole("button",{name:"Quick capture regression",exact:true}).waitFor();
+    assert.equal(await page.getByRole("textbox",{name:"Quick task title",exact:true}).inputValue(),"");
+    await page.getByRole("button",{name:"Delete Quick capture regression",exact:true}).click();
+    await page.getByRole("dialog").getByRole("button",{name:"Delete task",exact:true}).click();
+    await page.getByRole("textbox",{name:"Quick task title",exact:true}).fill("Detailed capture regression");
+    await page.getByRole("spinbutton",{name:"Quick estimate (minutes)",exact:true}).fill("40");
+    await page.getByRole("button",{name:"Add task details",exact:true}).click();
+    assert.equal(await page.getByRole("textbox",{name:"Task title",exact:true}).inputValue(),"Detailed capture regression");
+    assert.equal(await page.getByRole("spinbutton",{name:"Remaining (minutes)",exact:true}).inputValue(),"40");
+    await page.getByRole("button",{name:"Cancel",exact:true}).click();
+    assert.equal(await page.getByRole("textbox",{name:"Quick task title",exact:true}).inputValue(),"Detailed capture regression","canceling details preserves the quick draft");
+    await page.getByRole("button",{name:"Add task details",exact:true}).click();
+    await page.getByRole("dialog").getByRole("button",{name:"Add task",exact:true}).click();
+    await page.getByRole("button",{name:"Detailed capture regression",exact:true}).waitFor();
+    assert.equal(await page.getByRole("textbox",{name:"Quick task title",exact:true}).inputValue(),"");
+    await page.getByRole("button",{name:"Delete Detailed capture regression",exact:true}).click();
+    await page.getByRole("dialog").getByRole("button",{name:"Delete task",exact:true}).click();
+    await page.getByRole("navigation",{name:"Workspace"}).getByRole("button",{name:/^Today/}).click();
+    await page.getByRole("region",{name:"Today's agenda"}).getByRole("button",{name:"Plan my day",exact:true}).click();
+    await page.getByRole("status").filter({hasText:"Local planner:"}).waitFor();
+    assert.equal(await page.getByRole("button",{name:"day",exact:true}).getAttribute("aria-pressed"),"true","Today planning opens the day calendar");
+    await page.getByRole("navigation",{name:"Workspace"}).getByRole("button",{name:/^Today/}).click();
+    await page.getByRole("region",{name:"Today's agenda"}).getByRole("button",{name:"Check in",exact:true}).first().click();
+    await page.getByRole("dialog").getByRole("button",{name:"Done",exact:true}).waitFor();
+    await page.getByRole("dialog").getByRole("button",{name:"Close",exact:true}).click();
     await page.getByRole("button", { name: "Calendar", exact: true }).click();
     await page.getByRole("button", { name: "Plan my week", exact: true }).click();
     await page.getByRole("status").filter({ hasText: "Local planner:" }).waitFor();
     assert.ok(await page.locator(".study-block").count() > 0, "planning places study sessions");
+    // Exercise native drag and drop, including retaining the original grab offset.
+    await page.locator(".calendar-scroll").evaluate(el=>{el.scrollTop=9*52;});
+    const portfolio=page.locator(".study-block").filter({hasText:"Sketch the portfolio homepage"}).first();
+    await portfolio.scrollIntoViewIfNeeded();
+    const portfolioId=await portfolio.getAttribute("data-session-id");
+    const source=await portfolio.boundingBox();
+    const target=await page.locator('.calendar-column[data-date="2026-10-31"]').boundingBox();
+    await page.mouse.move(source.x+12,source.y+8);await page.mouse.down();
+    await page.mouse.move(source.x+20,source.y+14,{steps:5});
+    await page.mouse.move(target.x+40,target.y+11.5*52+8,{steps:20});await page.mouse.up();
+    await page.getByRole("status").filter({hasText:"Session moved to"}).waitFor({timeout:5000});
+    const dragged=await page.evaluate(id=>JSON.parse(localStorage.getItem("daylight.planning.v1.local-demo")).sessions.find(s=>s.id===id),portfolioId);
+    assert.equal(new Date(dragged.start).getDay(),6,"dragging really moves work to Saturday");
+    assert.equal(dragged.locked,true,"manual dragging keeps the chosen time");
+    await page.getByRole("button",{name:"Plan my week",exact:true}).click();
+    await page.getByRole("status").filter({hasText:"Local planner:"}).waitFor();
+    assert.equal(await page.evaluate(id=>JSON.parse(localStorage.getItem("daylight.planning.v1.local-demo")).sessions.find(s=>s.id===id).start,portfolioId),dragged.start,"locked work survives replanning");
+    await page.waitForTimeout(400);
+    await page.locator(`[data-session-id="${portfolioId}"]`).click();
+    await page.getByRole("button",{name:"Allow replanning",exact:true}).click();
+    await page.getByRole("dialog").getByRole("button",{name:"Close",exact:true}).click();
+    const beforeInvalid=dragged.start;
+    const movedSource=await page.locator(`[data-session-id="${portfolioId}"]`).boundingBox();
+    const school=await page.locator('.calendar-column[data-date="2026-10-28"]').boundingBox();
+    await page.mouse.move(movedSource.x+12,movedSource.y+8);await page.mouse.down();
+    await page.mouse.move(movedSource.x+20,movedSource.y+14,{steps:5});
+    await page.mouse.move(school.x+40,school.y+10*52+8,{steps:20});await page.mouse.up();
+    await page.getByRole("alert").filter({hasText:/study days|protected/}).waitFor();
+    assert.equal(await page.evaluate(id=>JSON.parse(localStorage.getItem("daylight.planning.v1.local-demo")).sessions.find(s=>s.id===id).start,portfolioId),beforeInvalid,"invalid drops preserve the original placement");
+    await page.waitForTimeout(400);
     await page.locator(".study-block").first().click();
     await page.getByRole("button", { name: "Move session", exact: true }).click();
     await page.getByRole("dialog").waitFor({ state: "hidden" });
@@ -47,28 +113,96 @@ const fs = require("node:fs");
     await page.locator(".protected-row").filter({ hasText: "Music lesson" }).waitFor();
     await page.getByRole("button", { name: "Preferences", exact: true }).click();
     await page.getByRole("spinbutton", { name: "Daily focus limit", exact: true }).fill("150");
+    await page.getByRole("spinbutton", {name:"Daily reserve minutes",exact:true}).fill("20");
+    await page.getByLabel("Deep work ends by",{exact:true}).fill("20:00");
+    await page.getByRole("combobox",{name:"Planning pace",exact:true}).selectOption("gentle");
+    await page.getByRole("combobox",{name:"Default task energy",exact:true}).selectOption("low");
     await page.getByRole("button", { name: "Save preferences", exact: true }).click();
     await page.locator(".progress-row").first().getByRole("button", { name: "Check in", exact: true }).click();
     await page.getByRole("button", { name: "Need more time", exact: true }).click();
     await page.getByRole("dialog").waitFor({ state: "hidden" });
     const planning = await page.evaluate(() => JSON.parse(localStorage.getItem("daylight.planning.v1.local-demo")));
     assert.equal(planning.preferences.capacity, 150);
+    assert.equal(planning.preferences.dailyBuffer,20);
+    assert.equal(planning.preferences.deepWorkEnd,"20:00");
+    assert.equal(planning.preferences.pace,"gentle");
+    assert.equal(planning.preferences.defaultEnergy,"low");
     assert.equal(planning.history[0].response, "Need more time");
     assert.ok(planning.fixed.some(b => b.title === "Music lesson"));
-    await page.getByRole("checkbox", { name: /^AI assistance/ }).check();
-    await page.getByRole("button", { name: "Plan my week", exact: true }).click();
-    await page.getByRole("status").filter({ hasText: "Local planner (AI unavailable)" }).waitFor();
+    await page.locator(".progress-row").first().getByRole("button", { name: "Check in", exact: true }).click();
+    await page.getByRole("button", { name: "Stuck", exact: true }).click();
+    await page.getByRole("dialog").waitFor({state:"hidden"});
+    assert.ok(await page.locator(".restart-block").count()>0, "stuck creates a visible restart block");
+    assert.ok(await page.locator(".plan-changes").count()>0, "adaptive changes are visible");
+    await page.clock.setFixedTime(new Date("2026-10-27T19:00:00-04:00"));
+    await page.locator(".progress-row").filter({hasText:"Practice quadratic equations"}).getByRole("button",{name:"Check in",exact:true}).click();
+    await page.getByRole("button",{name:"Done",exact:true}).click();
+    await page.getByRole("dialog").waitFor({state:"hidden"});
+    assert.ok(await page.locator(".completed-block").count()>0,"completed ongoing work remains visible as completed");
+    const downloadPromise=page.waitForEvent("download");
+    await page.getByRole("button",{name:"Export planner backup",exact:true}).click();
+    const downloaded=await downloadPromise;
+    const exported=JSON.parse(fs.readFileSync(await downloaded.path(),"utf8"));
+    assert.equal(exported.planning.history.length,3);assert.ok(exported.tasks.some(t=>t.title==="Practice quadratic equations" && t.status==="done"));
+    // Simulate the task saving successfully while the subsequent planning snapshot fails.
+    const beforeRecovery=await page.evaluate(()=>JSON.parse(localStorage.getItem("daylight.tasks.v1")).find(t=>t.title==="Draft the history essay").remaining_minutes);
+    await page.evaluate(()=>{const set=Storage.prototype.setItem;let failed=false;Storage.prototype.setItem=function(key,value){if(key==="daylight.planning.v1.local-demo" && !failed){failed=true;throw new DOMException("Simulated quota failure","QuotaExceededError");}return set.call(this,key,value);};});
+    await page.locator(".progress-row").filter({hasText:"Draft the history essay"}).getByRole("button",{name:"Check in",exact:true}).click();
+    await page.getByRole("button",{name:"Need more time",exact:true}).click();
+    await page.getByRole("dialog").getByRole("alert").filter({hasText:"Reload before trying again"}).waitFor();
+    await page.reload({waitUntil:"networkidle"});
+    await page.getByRole("button",{name:"Calendar",exact:true}).click();
+    await page.getByRole("status").filter({hasText:"Recovered your interrupted check-in"}).waitFor();
+    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem("daylight.tasks.v1")).find(t=>t.title==="Draft the history essay").remaining_minutes),beforeRecovery+30,"recovery never adds the extra minutes twice");
+    assert.equal(await page.evaluate(()=>localStorage.getItem("daylight.planning.v1.local-demo.pending")),null);
+    await page.locator(".progress-row").filter({hasText:"Sketch the portfolio homepage"}).getByRole("button",{name:"Check in",exact:true}).click();
+    await page.getByRole("button",{name:"Skip for now",exact:true}).click();
+    await page.getByRole("dialog").waitFor({state:"hidden"});
+    await page.locator(".progress-row").filter({hasText:"Read chapter 7"}).getByRole("button",{name:"Check in",exact:true}).click();
+    await page.getByRole("spinbutton",{name:"Minutes completed or extra time needed",exact:true}).fill("5");
+    await page.getByRole("button",{name:"Making progress",exact:true}).click();
+    await page.getByRole("dialog").waitFor({state:"hidden"});
+    assert.ok(await page.evaluate(()=>JSON.parse(localStorage.getItem("daylight.planning.v1.local-demo")).skipped.length===1),"skip survives another task's check-in");
+    await page.locator(".progress-row").filter({hasText:"Sketch the portfolio homepage"}).getByRole("button",{name:"Resume",exact:true}).click();
+    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem("daylight.planning.v1.local-demo")).skipped.length),0,"resume restores the task to planning");
+    await page.context().setOffline(true);
+    await page.getByRole("button",{name:"Plan my day",exact:true}).click();
+    await page.getByRole("status").filter({hasText:"Local planner:"}).waitFor();
+    await page.context().setOffline(false);
+    assert.deepEqual(externalPlanningRequests,[],"core planning never calls an external AI endpoint");
     await page.reload({ waitUntil: "networkidle" });
     await page.getByRole("button", { name: "Calendar", exact: true }).click();
-    await page.getByText("Recent check-ins (1)", { exact: true }).waitFor();
+    await page.getByText("Recent check-ins (6)", { exact: true }).waitFor();
     await page.screenshot({ path: "artifacts/daylight-calendar-desktop.png", fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.screenshot({ path: "artifacts/daylight-calendar-mobile.png", fullPage: true });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, "calendar scroll stays contained on mobile");
+    await page.getByRole("button",{name:"day",exact:true}).click();
+    await page.locator(".study-block").first().click();
+    await page.getByRole("dialog").getByRole("button",{name:"Check in",exact:true}).waitFor();
+    await page.getByRole("dialog").getByRole("button",{name:"Close",exact:true}).click();
     await page.getByRole("button", { name: "All tasks", exact: true }).click();
     await page.screenshot({ path: "artifacts/daylight-mobile.png", fullPage: true });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, "page must not overflow horizontally");
+    await page.getByRole("navigation",{name:"Workspace"}).getByRole("button",{name:/^Today/}).click();
+    await page.screenshot({path:"artifacts/daylight-today-mobile.png",fullPage:true});
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,"daily agenda stays within the mobile viewport");
     assert.deepEqual(errors, []);
     console.log("Browser smoke passed: task CRUD, filters, calendar planning, protected time, preferences, adaptive check-in, persistence, desktop and mobile layout; no page errors.");
-  } finally { await browser.close(); }
-})().catch(error => { console.error(error); process.exit(1); });
+  } catch(error) { await page.screenshot({path:"artifacts/daylight-browser-failure.png",fullPage:true}); console.error("Browser state:",await page.locator(".error-banner,.plan-message,.drop-preview").allTextContents()); throw error; } finally { await browser.close(); }
+}
+(async()=>{
+  let server;
+  try {
+    if(process.argv.includes("--serve")) {
+      server=require("node:child_process").spawn(process.execPath,["node_modules/next/dist/bin/next","start","--hostname","127.0.0.1","--port","3100"],{stdio:["ignore","pipe","pipe"],windowsHide:true});
+      await new Promise((resolve,reject)=>{
+        const timer=setTimeout(()=>reject(new Error("Local test server did not become ready")),15000);
+        server.stdout.on("data",data=>{if(String(data).includes("Ready")){clearTimeout(timer);resolve();}});
+        server.once("error",error=>{clearTimeout(timer);reject(error);});
+        server.once("exit",code=>{clearTimeout(timer);reject(new Error(`Local server exited (${code})`));});
+      });
+    }
+    await smoke();
+  } finally { server?.kill(); }
+})().catch(error=>{console.error(error);process.exit(1);});

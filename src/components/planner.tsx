@@ -5,7 +5,9 @@ import { ArrowDownUp, ArrowRight, BookOpen, CalendarDays, Check, CheckCheck, Che
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "./ui/dialog";
 import { TaskEditor } from "./task-editor";
-import { PlanningCalendar } from "./planning-calendar";
+import { QuickCapture } from "./quick-capture";
+import { TodayAgenda } from "./today-agenda";
+import { PlanningCalendar, type CalendarCommand } from "./planning-calendar";
 import type { PlanningState } from "@/lib/scheduling";
 import { AuthDialog } from "./auth-dialog";
 import { cloudRepository, localRepository } from "@/lib/repository";
@@ -29,6 +31,7 @@ function dueLabel(deadline: string | null, now: Date) {
 }
 
 export function Planner() {
+  const contentRef=useRef<HTMLElement>(null);
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -47,6 +50,8 @@ export function Planner() {
   const [authOpen, setAuthOpen] = useState(false);
   const [info, setInfo] = useState<"help" | null>(null);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const calendarCommandId=useRef(0);
+  const [calendarCommand,setCalendarCommand]=useState<CalendarCommand|null>(null);
   const [planningExport, setPlanningExport] = useState<PlanningState | null>(null);
   const [now, setNow] = useState<Date | null>(null);
   const epoch = useRef(0);
@@ -63,7 +68,7 @@ export function Planner() {
       if (alive) {
         const nextId = session?.user.id ?? null;
         if (identity.current !== nextId) {
-          identity.current = nextId; epoch.current++; setTasks([]); setEditor(null); setDeleting(null); setNotice("");
+          identity.current = nextId; epoch.current++; setTasks([]); setCalendarCommand(null); setPlanningExport(null); setPreferencesOpen(false); setEditor(null); setDeleting(null); setNotice("");
           setUser(session?.user ?? null);
         }
         setAuthReady(true); if (session) setAuthOpen(false);
@@ -82,7 +87,7 @@ export function Planner() {
   useEffect(() => { if (authReady) void reload(); }, [authReady, reload]);
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(""), 4000); return () => clearTimeout(timer); }, [notice]);
   useEffect(() => {
-    const listener = () => { if (!user) void reload(); };
+    const listener = (event:StorageEvent) => { if (!user && (event.key==="daylight.tasks.v1" || event.key===null)) void reload(); };
     window.addEventListener("storage", listener);
     return () => window.removeEventListener("storage", listener);
   }, [user, reload]);
@@ -99,7 +104,7 @@ export function Planner() {
   async function save(input: TaskInput, id?: string) {
     const current = epoch.current;
     const saved = await repository.save(input, id);
-    if (current !== epoch.current) return;
+    if (current !== epoch.current) throw new Error("The workspace changed while saving. Reload before checking in again.");
     setTasks(rows => id ? rows.map(row => row.id === id ? saved : row) : [saved, ...rows]);
     setNotice(id ? "Task updated. A little clearer already." : "Task added. One less thing to keep in your head.");
   }
@@ -117,7 +122,13 @@ export function Planner() {
     catch (e) { setError(e instanceof Error ? e.message : "Could not delete task."); }
     finally { setPending(null); }
   }
+  useEffect(()=>{
+    if(window.matchMedia("(prefers-reduced-motion: reduce)").matches)return;
+    const animation=contentRef.current?.animate([{opacity:.35,transform:"translateY(8px)"},{opacity:1,transform:"translateY(0)"}],{duration:340,easing:"cubic-bezier(.22,1,.36,1)"});
+    return ()=>animation?.cancel();
+  },[view,subject]);
   function navigate(next: View) { setView(next); setSubject("all"); setStatus("all"); setDeadline("all"); setSearch(""); }
+  function openToday(action:CalendarCommand["action"]="show_day",taskId?:string){navigate("calendar");setCalendarCommand({id:++calendarCommandId.current,action,taskId});}
   function exportTasks() {
     const link = document.createElement("a");
     const url = URL.createObjectURL(new Blob([JSON.stringify({ version: 1, exported_at: new Date().toISOString(), tasks, planning: planningExport }, null, 2)], { type: "application/json" }));
@@ -146,10 +157,10 @@ export function Planner() {
     </aside>
 
     <div className="main-shell"><header className="topbar"><div className="flex items-center gap-2 text-xs text-muted-foreground"><span>My workspace</span><ChevronRight size={13} /><span className="text-foreground">{viewNames[view]}</span></div><div className="flex items-center gap-4"><span className="hidden sm:block text-xs text-muted-foreground">{now?.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) ?? "Your workspace"}</span><span className="topbar-divider" /><button className="text-muted-foreground hover:text-primary" aria-label="About Daylight" onClick={() => setInfo("help")}><CircleHelp size={17} /></button></div></header>
-    <main className="main-content">
+    <main ref={contentRef} className="main-content">
       <div className="page-heading"><div><div className="eyebrow"><span className="size-1.5 rounded-full bg-primary" /> LESS MENTAL CLUTTER, MORE DAYLIGHT</div><h1>{viewNames[view]}<span className="heading-dot">.</span></h1><p>{view === "done" ? "Small steps add up. Here’s what you’ve finished." : view === "today" ? "A little focus for what’s in front of you." : view === "inbox" ? "A home for everything you haven’t started yet." : "School, side quests, and everything in between. You’ve got this."}</p></div><Button onClick={() => setEditor({ task: null })} disabled={loading} className="add-button" aria-label="Add task"><Plus size={16} />Add task<span className="key-hint" aria-hidden="true">+</span></Button></div>
 
-      <div hidden={view === "calendar"}><section className="stats-grid" aria-label="Task overview"><div className="stat-card"><div><span className="stat-label">On your plate</span><div className="stat-number">{incomplete.length}<span>tasks</span></div><p>A place for every little thing</p></div><span className="stat-icon green"><ListTodo size={21} /></span></div>
+      <div hidden={view === "calendar"}>{view==="today" && !loading && <TodayAgenda tasks={tasks} state={planningExport} now={now} onPlan={()=>openToday("plan_day")} onOpen={()=>openToday()} onCheck={id=>openToday("check_in",id)} onEdit={task=>setEditor({task})}/>}<div hidden={view==="done"}><QuickCapture key={user?.id ?? "local-demo"} subjects={subjects} defaultSubject={subject==="all"?"Personal":subject} disabled={loading} onSave={save}/></div><section className="stats-grid" aria-label="Task overview"><div className="stat-card"><div><span className="stat-label">On your plate</span><div className="stat-number">{incomplete.length}<span>tasks</span></div><p>A place for every little thing</p></div><span className="stat-icon green"><ListTodo size={21} /></span></div>
         <div className="stat-card"><div><span className="stat-label">Due today</span><div className="stat-number">{dueToday}<span>{dueToday === 1 ? "task" : "tasks"}</span></div><p>{dueToday ? "Let’s take it one step at a time" : "A little breathing room today"}</p></div><span className="stat-icon peach"><Sun size={22} /></span></div>
         <div className="stat-card"><div><span className="stat-label">Time to make progress</span><div className="stat-number time-number">{formatMinutes(incomplete.reduce((sum, t) => sum + t.remaining_minutes, 0))}</div><p>Estimated work remaining</p></div><span className="stat-icon purple"><Clock3 size={21} /></span></div>
       </section>
@@ -176,9 +187,9 @@ export function Planner() {
       </section>
 
       <div className="bottom-note"><span className="flex items-center gap-2"><CheckCheck size={15} />{completed ? `${completed} ${completed === 1 ? "task" : "tasks"} finished. That’s progress.` : "Progress is a few small steps, taken often."}</span><button onClick={() => setAuthOpen(true)} className="text-primary underline underline-offset-4">{user ? "Account" : "Connect account"}</button></div>
-      <section className="next-chapter"><div><span className="chapter-label">THE NEXT CHAPTER</span><h2>Your time, thoughtfully arranged.</h2><p>Make space for school, study, and everything beyond it.</p></div><button onClick={() => navigate("calendar")} className="flex items-center gap-2 text-xs font-medium text-primary">Open calendar<ArrowRight size={15} /></button></section>
+      <section className="next-chapter"><div><span className="chapter-label">MAKE SPACE FOR YOUR DAY</span><h2>Your time, thoughtfully arranged.</h2><p>Make space for school, study, and everything beyond it.</p></div><button onClick={() => navigate("calendar")} className="flex items-center gap-2 text-xs font-medium text-primary">Open calendar<ArrowRight size={15} /></button></section>
       </div>
-      {authReady && !loading && <div hidden={view !== "calendar"}><PlanningCalendar visible={view === "calendar"} key={user?.id ?? "local-demo"} owner={user?.id ?? "local-demo"} tasks={tasks} preferencesOpen={preferencesOpen} closePreferences={() => setPreferencesOpen(false)} saveTask={save} editTask={task => setEditor({task})} registerExport={setPlanningExport}/></div>}
+      {authReady && !loading && <div hidden={view !== "calendar"}><PlanningCalendar command={calendarCommand} onCommandHandled={id=>setCalendarCommand(current=>current?.id===id?null:current)} addTask={()=>setEditor({task:null})} openPreferences={()=>setPreferencesOpen(true)} visible={view === "calendar"} key={user?.id ?? "local-demo"} owner={user?.id ?? "local-demo"} tasks={tasks} preferencesOpen={preferencesOpen} closePreferences={() => setPreferencesOpen(false)} saveTask={save} editTask={task => setEditor({task})} registerExport={setPlanningExport}/></div>}
       <button className="mobile-preferences" onClick={() => setPreferencesOpen(true)}>Study preferences</button>
     </main></div>
 

@@ -3,6 +3,9 @@ import {z,ZodError} from "zod";
 import {useEffect,useRef,useState} from "react";
 import {Sparkles,Send,ArrowRight,Loader2} from "lucide-react";
 import {Button} from "./ui/button";
+import {AssistantAvatar} from "./assistant-avatar";
+import {AssistantIdentity} from "./assistant-identity";
+import {defaultPersona,loadPersona,toneLabels,voiceText,type AssistantPersona} from "@/lib/assistant-persona";
 import {dailyAgenda} from "@/lib/agenda";
 import {parseDayBrief,progressIntent} from "@/lib/day-assistant";
 import {eventDrafts,nothing,protectedDraft,sameTask,subjectList,taskDrafts,type EventDraft} from "@/lib/planning-conversation";
@@ -14,12 +17,14 @@ const localDateTime=(iso:string)=>{const d=new Date(iso);return dateKey(d)+"T"+S
 const welcome="Hey. Let's make a day that works for you. Tell me about school, homework, practice, work—whatever is on your plate. You can share it all at once, or I can walk you through it.";
 const conversationSchema=z.object({day:z.string(),messages:z.array(z.object({role:z.enum(["assistant","you"]),text:z.string()})).max(200),subjects:z.array(z.string()),step:z.number().int(),drafts:z.array(taskInputSchema),events:z.array(z.object({id:z.string(),title:z.string(),date:z.string(),start:z.string(),end:z.string()})),finished:z.boolean()});
 export function PlanningAssistant({owner,onProgress,onPreferences,subjects:known,tasks,planning,onBuild}:Props){
- const [messages,setMessages]=useState<Message[]>([{role:"assistant",text:welcome}]);
+ const [persona,setPersona]=useState<AssistantPersona>(defaultPersona);
+ const [messages,setMessages]=useState<Message[]>([{role:"assistant",text:voiceText(welcome,persona.tone)}]);
  const [subjects,setSubjects]=useState<string[]>([]),[step,setStep]=useState(-2),[answer,setAnswer]=useState("");
  const [drafts,setDrafts]=useState<TaskInput[]>([]),[events,setEvents]=useState<EventDraft[]>([]);
  const [busy,setBusy]=useState(false),[error,setError]=useState(""),[finished,setFinished]=useState(false);
  const [pendingProgress,setPendingProgress]=useState<ReturnType<typeof progressIntent>>(null);
  const [restored,setRestored]=useState(false);
+ useEffect(()=>{let next={...defaultPersona};try{next=loadPersona(localStorage,owner);}catch{}setPersona(next);setMessages(rows=>rows.length===1?[{role:"assistant",text:voiceText(welcome,next.tone)}]:rows);},[owner]);
  useEffect(()=>{try{const raw=sessionStorage.getItem("daylight.conversation.v1."+owner);if(raw){const saved=conversationSchema.safeParse(JSON.parse(raw));if(saved.success && saved.data.day===dateKey(new Date())){const d=saved.data;setMessages(d.messages);setSubjects(d.subjects);setStep(d.step);setDrafts(d.drafts);setEvents(d.events);setFinished(d.finished);}}}catch{}setRestored(true);},[owner]);
  useEffect(()=>{if(!restored)return;try{const data=conversationSchema.safeParse({day:dateKey(new Date()),messages:messages.slice(-200),subjects,step,drafts,events,finished});if(data.success)sessionStorage.setItem("daylight.conversation.v1."+owner,JSON.stringify(data.data));}catch{}},[restored,owner,messages,subjects,step,drafts,events,finished]);
  const operation=useRef(false),last=useRef<HTMLDivElement>(null),input=useRef<HTMLTextAreaElement>(null);
@@ -30,23 +35,23 @@ export function PlanningAssistant({owner,onProgress,onPreferences,subjects:known
   try{
    if(step===-2 || finished){
     setPendingProgress(null);
-    if(/^(thanks|thank you|okay|ok|cool|got it)[!. ]*$/i.test(text)){setAnswer("");setMessages(rows=>[...rows,{role:"you",text},{role:"assistant",text:"Anytime. I'm here when the day changes."}]);return;}
+    if(/^(thanks|thank you|okay|ok|cool|got it)[!. ]*$/i.test(text)){setAnswer("");setMessages(rows=>[...rows,{role:"you",text},{role:"assistant",text:voiceText("Anytime. I'm here when the day changes.",persona.tone)}]);return;}
     if(/what(?:[’']s| is) (?:next|my plan)|what do I have|how does my day look/i.test(text)){
       const agenda=planning?dailyAgenda(tasks,planning,new Date()):null;
       const summary=agenda?.entries.slice(0,5).map(e=>new Date(e.start).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})+" — "+e.title).join("\n");
-      setAnswer("");setMessages(rows=>[...rows,{role:"you",text},{role:"assistant",text:summary?"Here's what's ahead:\n"+summary+"\nYour full timeline is right here alongside us.":"No sessions are planned for the rest of today. Tell me what needs doing, or choose Rebalance my day to arrange your saved work."}]);return;
+      setAnswer("");setMessages(rows=>[...rows,{role:"you",text},{role:"assistant",text:voiceText(summary?"Here's what's ahead:\n"+summary+"\nYour full timeline is right here alongside us.":"No sessions are planned for the rest of today. Tell me what needs doing, or choose Rebalance my day to arrange your saved work.",persona.tone)}]);return;
     }
-    if(/\b(tired|exhausted|overwhelmed)\b/i.test(text) && text.length<160){setAnswer("");setMessages(rows=>[...rows,{role:"you",text},{role:"assistant",text:"Let's make this feel lighter. Open Study preferences above to lower your daily focus allowance or choose Gentle pace, and I'll rebuild around it. You can also tell me to set a task aside. Fixed commitments, breaks and hard deadlines will stay protected."}]);return;}
+    if(/\b(tired|exhausted|overwhelmed)\b/i.test(text) && text.length<160){setAnswer("");setMessages(rows=>[...rows,{role:"you",text},{role:"assistant",text:voiceText("Let's make this feel lighter. Open Study preferences above to lower your daily focus allowance or choose Gentle pace, and I'll rebuild around it. You can also tell me to set a task aside. Fixed commitments, breaks and hard deadlines will stay protected.",persona.tone)}]);return;}
     const intent=progressIntent(text,tasks);
-    if(intent){setAnswer("");setPendingProgress(intent);setMessages(rows=>[...rows,{role:"you",text},{role:"assistant",text:intent.matches.length?`You said “${intent.response}”${intent.response==="Done" || intent.response==="Skip for now"?"":` · ${intent.minutes} minutes`}. Which task should we update? Pick it below and I’ll rebalance the remaining work.`:"There isn't a saved task to update yet. Tell me what you need to work on, and we'll make a plan first."}]);return;}
+    if(intent){setAnswer("");setPendingProgress(intent);setMessages(rows=>[...rows,{role:"you",text},{role:"assistant",text:voiceText(intent.matches.length?`You said “${intent.response}”${intent.response==="Done" || intent.response==="Skip for now"?"":` · ${intent.minutes} minutes`}. Which task should we update? Pick it below and I’ll rebalance the remaining work.`:"There isn't a saved task to update yet. Tell me what you need to work on, and we'll make a plan first.",persona.tone)}]);return;}
     if(/^(?:plan (?:my |the )?day|plan around saved work|rebalance(?: my day)?|make (?:a |my )?plan)[.! ]*$/i.test(text)){
      operation.current=true;setBusy(true);setError("");setAnswer("");
-     try{await onBuild([],[]);setFinished(true);setMessages(rows=>[...rows,{role:"you",text},{role:"assistant",text:"Your day is rebalanced. The timeline beside us has the new plan. If something couldn't fit, we'll keep it visible rather than crowding out your life."}]);}finally{operation.current=false;setBusy(false);}return;
+     try{await onBuild([],[]);setFinished(true);setMessages(rows=>[...rows,{role:"you",text},{role:"assistant",text:voiceText("Your day is rebalanced. The timeline beside us has the new plan. If something couldn't fit, we'll keep it visible rather than crowding out your life.",persona.tone)}]);}finally{operation.current=false;setBusy(false);}return;
     }
-    if(/^(walk me through(?: today)?|ask me questions|help me get started)[.! ]*$/i.test(text)){setStep(-1);setFinished(false);setMessages(rows=>[...rows,{role:"you",text},{role:"assistant",text:"What subjects do you have work for? Say their names, like Math, English and Biology. Or say ‘none’ to start with life outside school."}]);setAnswer("");return;}
+    if(/^(walk me through(?: today)?|ask me questions|help me get started)[.! ]*$/i.test(text)){setStep(-1);setFinished(false);setMessages(rows=>[...rows,{role:"you",text},{role:"assistant",text:voiceText("What subjects do you have work for? Say their names, like Math, English and Biology. Or say ‘none’ to start with life outside school.",persona.tone)}]);setAnswer("");return;}
     const names=text.length<200 && !/[0-9;:\n]/.test(text)?subjectList(text):[];
-    if(names.length>1 && names.every(name=>known.some(k=>k.toLowerCase()===name.toLowerCase()))){setSubjects(names);setStep(0);setFinished(false);setAnswer("");setMessages(rows=>[...rows,{role:"you",text},{role:"assistant",text:"What work do you have for "+names[0]+"? Tell me the assignments, rough estimates and deadlines. You can give several together, or say ‘none’."}]);return;}
-    const brief=parseDayBrief(text,known,new Date());setDrafts(brief.tasks);setEvents(brief.events);setFinished(false);setStep(subjects.length+2);setAnswer("");setError("");setMessages(rows=>[...rows,{role:"you",text},{role:"assistant",text:"I've pulled out the work and fixed plans. Check the details below—especially dates and any times I couldn't read confidently. Then I'll make room for everything."}]);return;
+    if(names.length>1 && names.every(name=>known.some(k=>k.toLowerCase()===name.toLowerCase()))){setSubjects(names);setStep(0);setFinished(false);setAnswer("");setMessages(rows=>[...rows,{role:"you",text},{role:"assistant",text:voiceText("What work do you have for "+names[0]+"? Tell me the assignments, rough estimates and deadlines. You can give several together, or say ‘none’.",persona.tone)}]);return;}
+    const brief=parseDayBrief(text,known,new Date());setDrafts(brief.tasks);setEvents(brief.events);setFinished(false);setStep(subjects.length+2);setAnswer("");setError("");setMessages(rows=>[...rows,{role:"you",text},{role:"assistant",text:voiceText("I've pulled out the work and fixed plans. Check the details below—especially dates and any times I couldn't read confidently. Then I'll make room for everything.",persona.tone)}]);return;
    }
    let nextSubjects=subjects,nextStep=step+1;let response="";
    if(step===-1){nextSubjects=nothing(text)?[]:subjectList(text);setSubjects(nextSubjects);nextStep=0;}
@@ -57,25 +62,25 @@ export function PlanningAssistant({owner,onProgress,onPreferences,subjects:known
    else if(nextStep===nextSubjects.length)response="What happens after school—practice, a job shift, clubs, appointments, or family time? For example: ‘Soccer 4–6pm; dinner 7–7:30pm’. Your saved protected time stays in place. Say ‘none’ if there's nothing new.";
    else if(nextStep===nextSubjects.length+1)response="Anything outside school to make room for—chores, a personal project, applications, or work? Tell me everything in one message. For example: ‘Laundry 20 min; work on portfolio 45 min due Friday’. Or say ‘none’.";
    else response="Here's what I understood. Check my estimates and dates below, and fill in any event times I couldn't read confidently. Then I'll add everything and arrange your day around your saved commitments, breaks, and study preferences.";
-   setMessages(rows=>[...rows,{role:"you",text},{role:"assistant",text:response}]);setStep(nextStep);setAnswer("");setError("");requestAnimationFrame(()=>input.current?.focus());
+   setMessages(rows=>[...rows,{role:"you",text},{role:"assistant",text:voiceText(response,persona.tone)}]);setStep(nextStep);setAnswer("");setError("");requestAnimationFrame(()=>input.current?.focus());
   }catch(e){setError(e instanceof ZodError?e.issues[0].message:e instanceof Error?e.message:"I couldn't read that. Try a shorter message.");}
  }
- function reset(){setStep(-2);setPendingProgress(null);setSubjects([]);setDrafts([]);setEvents([]);setMessages([{role:"assistant",text:welcome}]);setError("");setFinished(false);setAnswer("");}
+ function reset(){setStep(-2);setPendingProgress(null);setSubjects([]);setDrafts([]);setEvents([]);setMessages([{role:"assistant",text:voiceText(welcome,persona.tone)}]);setError("");setFinished(false);setAnswer("");}
  async function build(){
   if(operation.current)return;operation.current=true;setBusy(true);setError("");
-  try{const validated=drafts.map(t=>taskInputSchema.parse(t));const fixed=events.map(protectedDraft);await onBuild(validated,fixed);setFinished(true);setPendingProgress(null);setMessages(rows=>[...rows,{role:"assistant",text:"Your day is ready. The timeline has updated without moving your fixed commitments. Come back here when plans change—tell me you need more time, made progress, or got stuck."}]);}
+  try{const validated=drafts.map(t=>taskInputSchema.parse(t));const fixed=events.map(protectedDraft);await onBuild(validated,fixed);setFinished(true);setPendingProgress(null);setMessages(rows=>[...rows,{role:"assistant",text:voiceText("Your day is ready. The timeline has updated without moving your fixed commitments. Come back here when plans change—tell me you need more time, made progress, or got stuck.",persona.tone)}]);}
   catch(e){setError((e instanceof ZodError?e.issues[0].message:e instanceof Error?e.message:"Could not save the plan.")+" Your draft is still here. Any tasks already saved will be kept; retrying skips matching tasks.");}
   finally{operation.current=false;setBusy(false);}
  }
  async function updateProgress(task:Task){
   if(!pendingProgress || operation.current)return;operation.current=true;setBusy(true);setError("");
-  try{const summary=await onProgress(task.id,pendingProgress.response,pendingProgress.minutes);setMessages(rows=>[...rows,{role:"you",text:task.title},{role:"assistant",text:summary}]);setPendingProgress(null);setFinished(true);}
+  try{const summary=await onProgress(task.id,pendingProgress.response,pendingProgress.minutes);setMessages(rows=>[...rows,{role:"you",text:task.title},{role:"assistant",text:voiceText(summary,persona.tone)}]);setPendingProgress(null);setFinished(true);}
   catch(e){setError(e instanceof Error?e.message:"Could not update this task. Your previous plan is kept.");}
   finally{operation.current=false;setBusy(false);}
  }
- return <section className="planning-assistant" aria-label="Planning assistant"><div className="assistant-heading"><span><span className="assistant-orb"><Sparkles size={18}/></span> Daylight</span><small>Your planning partner <i className="assistant-status-dot"/></small></div>
+ return <section className="planning-assistant" aria-label="Planning assistant"><AssistantIdentity owner={owner} persona={persona} busy={busy} onChange={next=>{setPersona(next);setMessages(rows=>rows.length===1 && step===-2?[{role:"assistant",text:voiceText(welcome,next.tone)}]:[...rows,{role:"assistant",text:"I'll keep things "+toneLabels[next.tone].toLowerCase()+". Your planning preferences and saved work stay as they are."}]);}}/>
  <div className="assistant-context"><span>School, work, and a life outside both.</span><button onClick={onPreferences}>Study preferences ↗</button></div>
- <div className="assistant-messages" role="log" aria-label="Planning conversation" aria-live="polite" aria-relevant="additions">{messages.map((m,i)=><div key={i} className={`assistant-message ${m.role=== "you"?"from-you":"from-daylight"}`}><small>{m.role==="you"?"You":"Daylight"}</small><p>{m.text}</p></div>)}<div ref={last}/></div>
+ <div className="assistant-messages" role="log" aria-label="Planning conversation" aria-live="polite" aria-relevant="additions">{messages.map((m,i)=><div key={i} className={`assistant-message ${m.role=== "you"?"from-you":"from-daylight"}`}><small>{m.role==="assistant" && <AssistantAvatar variant={persona.avatar} size={22}/>} {m.role==="you"?"You":persona.name}</small><p>{m.text}</p></div>)}<div ref={last}/></div>
  {(!review || finished) && <><div className="assistant-suggestions">{(step===-2 || finished) && <><Button size="sm" variant="outline" disabled={busy} onClick={()=>void reply("Walk me through today")}>Help me get started</Button><Button size="sm" variant="ghost" disabled={busy} onClick={()=>void reply("Plan around saved work")}>Rebalance my day</Button></>}{(step===-1?known.slice(0,8):[]).map(s=><Button key={s} size="sm" variant="outline" onClick={()=>setAnswer(current=>current?current+", "+s:s)}>{s}</Button>)}{step===-1 && known.length>0 && <Button size="sm" variant="ghost" onClick={()=>reply(known.join(", "))}>Use my subjects</Button>}{step>=-1 && !finished && <Button size="sm" variant="ghost" onClick={()=>void reply("none")}>{step===-1?"Outside school only":"Nothing new here"}</Button>}</div>
  <form className="assistant-composer" onSubmit={e=>{e.preventDefault();reply(answer);}}><label className="sr-only" htmlFor="assistant-answer">Your reply</label><textarea disabled={busy} id="assistant-answer" ref={input} value={answer} maxLength={5000} rows={3} onChange={e=>setAnswer(e.target.value)} placeholder={step===-2 || finished?"Math: worksheet 30 min due tomorrow; soccer 4–6pm; laundry 20 min…":step===-1?"Math, English and Biology…":"Tell me what’s on your mind…"}/><Button type="submit" disabled={busy || !answer.trim()}>{busy?<Loader2 size={15} className="animate-spin"/>:<Send size={15}/>}Send</Button></form><p className="assistant-hint">Share a few things at once, separated by semicolons or new lines. Estimates and dates are always yours to adjust.</p></>}
  {pendingProgress && <div className="assistant-task-picks">{pendingProgress.matches.map(task=><Button variant="outline" size="sm" disabled={busy} key={task.id} onClick={()=>void updateProgress(task)}>{task.title}<small>{task.remaining_minutes}m left</small></Button>)}<Button variant="ghost" size="sm" disabled={busy} onClick={()=>setPendingProgress(null)}>Cancel update</Button></div>}

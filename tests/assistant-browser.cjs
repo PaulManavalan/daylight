@@ -14,12 +14,22 @@ const temp=path.resolve('artifacts/assistant-browser-temp');fs.mkdirSync(temp,{r
   await page.getByRole('region',{name:'Planning assistant',exact:true}).waitFor();
   const assistant=page.getByRole('region',{name:'Planning assistant',exact:true});
   await page.screenshot({path:'artifacts/daylight-dark-home-initial.png',fullPage:true});
+  await assistant.getByLabel('Assistant personality and avatar',{exact:true}).click();
+  await assistant.getByRole('textbox',{name:'Assistant name',exact:true}).fill('Orbit');
+  await assistant.getByRole('button',{name:/^Straightforward/}).click();
+  await assistant.getByRole('button',{name:'moon avatar',exact:true}).click();
+  await assistant.getByRole('button',{name:'Save personality',exact:true}).click();
+  await assistant.getByText("Let's plan your day.",{exact:false}).waitFor();
+  assert.ok(await assistant.locator('.assistant-identity .companion-moon').first().isVisible());
+  await page.reload({waitUntil:'networkidle'});
+  await assistant.locator('.assistant-identity strong').filter({hasText:'Orbit'}).waitFor();
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('daylight.assistant-persona.v1.local-demo')).tone),'direct');
   async function say(text){await assistant.getByRole('textbox',{name:'Your reply',exact:true}).fill(text);await assistant.getByRole('button',{name:'Send',exact:true}).click();}
   await say('Math, English');await say('Assistant worksheet 30 min due tomorrow; Assistant revision 45 min due Friday');await say('none');
   await say('Assistant soccer 4-6pm; Assistant meetup 7-8');await say('Assistant laundry 20 min; Assistant portfolio 45 min due Friday');
   await assistant.getByRole('heading',{name:'Your day, ready to review',exact:true}).waitFor();
-  assert.equal(await assistant.locator('fieldset').count(),6);
-  const event=assistant.locator('fieldset').filter({has:page.locator('input[value="Assistant meetup"]')});
+  assert.equal(await assistant.locator('.assistant-review fieldset').count(),6);
+  const event=assistant.locator('.assistant-review fieldset').filter({has:page.locator('input[value="Assistant meetup"]')});
   await event.locator('input[type=time]').nth(0).fill('19:00');await event.locator('input[type=time]').nth(1).fill('20:00');
   const before=await page.evaluate(()=>JSON.parse(localStorage.getItem('daylight.tasks.v1')).length);
   await page.evaluate(()=>{const set=Storage.prototype.setItem;let fail=true;Storage.prototype.setItem=function(key,value){if(fail && key==='daylight.planning.v1.local-demo' && String(value).includes('Assistant soccer')){fail=false;throw new DOMException('Test quota failure','QuotaExceededError');}return set.call(this,key,value);};});
@@ -48,13 +58,13 @@ const temp=path.resolve('artifacts/assistant-browser-temp');fs.mkdirSync(temp,{r
   await assistant.getByText(/reclaimed its remaining time/).waitFor();
   await assistant.getByRole('button',{name:'Start a fresh conversation',exact:true}).click();
   await say('Math: Home brain dump 25 min due tomorrow; Home piano practice 4-5pm; Laundry test 20 min');
-  assert.equal(await assistant.locator('fieldset').count(),3);
+  assert.equal(await assistant.locator('.assistant-review fieldset').count(),3);
   await assistant.getByRole('button',{name:'Build my day',exact:true}).click();
   await assistant.getByRole('status').filter({hasText:'Your day is up to date'}).waitFor();
   assert.equal(await page.getByRole('navigation',{name:'Workspace',exact:true}).getByRole('button',{name:'Plan with me',exact:true}).count(),0,'assistant is the home workspace, not a separate tab');
   assert.equal(await page.evaluate(()=>getComputedStyle(document.documentElement).colorScheme),'dark');
   await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   await page.screenshot({path:'artifacts/daylight-assistant-mobile.png',fullPage:true});
-  console.log('Assistant home passed: direct brain dump, guided intake, protected time, save recovery, progress/stuck/more-time adaptation, session restore, dark theme, and responsive layout.');
+  console.log('Assistant identity and home passed: persistent name, personality, and avatar; direct brain dump, guided intake, protected time, save recovery, progress/stuck/more-time adaptation, session restore, dark theme, and responsive layout.');
  }catch(e){if(page){await page.screenshot({path:'artifacts/assistant-failure.png',fullPage:true});console.error(await page.locator('.error-banner').allTextContents());}throw e;}finally{await browser?.close();server?.kill();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

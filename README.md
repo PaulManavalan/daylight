@@ -96,13 +96,19 @@ Today's conversation is retained in this tab's sessionStorage per workspace and 
 
 Run **node tests/assistant-browser.cjs** after a build to verify the assistant home, direct day capture, guided capture, failed-save recovery, stuck/more-time/completion updates, conversation restore, and dark mobile layout.
 
+### Assistant personality and avatar
+
+Choose **Personalize** in the assistant header to rename the companion (default: Sol), choose a sun/moon/sprout avatar, and pick Calm, Straightforward, or Encouraging. The selected voice changes new greetings, questions, acknowledgements, planning feedback and progress responses. Historical messages retain their wording. Personality never changes task estimates, deadlines, capacity, or scheduling decisions. The avatar has subtle idle/working animation, disabled by reduced-motion preferences.
+
+Identity preferences are validated and stored per workspace in localStorage; they survive reloads on this device and are separate from the tab-scoped conversation draft. A failed settings save keeps the prior identity. They are not cloud-synced or included in task/planning exports.
+
 ### Free by default
 
 The primary planning and check-in flows run entirely on the device, with no AI endpoint, provider key, account, or paid service. The old paid-provider endpoint and adapter have been removed. No free-tier model dependency is introduced; those services are optional future enhancements. Natural-language check-ins are not implemented in this phase.
 
 ### Verification
 
-Run pnpm typecheck, pnpm test, and pnpm build. The 80 domain tests cover recurrence, deadlines, capacity, energy, pace, locks, deterministic output, partial days, persistent skip, and storage recovery. Run node tests/browser-smoke.cjs --serve to start an isolated production test server, or run without --serve against port 3000. Set PLAYWRIGHT_MODULE to an installed Playwright package path when outside the Codex bundled runtime. This exercises native drag/drop (including an invalid drop), manual moves, expanded preferences, stuck restart sessions, completed sessions, persistent skip/resume, an interrupted-save recovery, export, and offline planning with zero AI requests, alongside task CRUD and mobile layout.
+Run pnpm typecheck, pnpm test, and pnpm build. The 83 domain tests cover recurrence, deadlines, capacity, energy, pace, locks, deterministic output, partial days, persistent skip, and storage recovery. Run node tests/browser-smoke.cjs --serve to start an isolated production test server, or run without --serve against port 3000. Set PLAYWRIGHT_MODULE to an installed Playwright package path when outside the Codex bundled runtime. This exercises native drag/drop (including an invalid drop), manual moves, expanded preferences, stuck restart sessions, completed sessions, persistent skip/resume, an interrupted-save recovery, export, and offline planning with zero AI requests, alongside task CRUD and mobile layout.
 
 ### Remaining integrations
 

@@ -47,3 +47,6 @@ The existing Supabase planning tables remain future cloud-sync infrastructure; t
 
 
 The home assistant supports either a mixed day brief or guided subject/event/outside-work intake. It reviews drafts before writing and remains on the home workspace after planning. Explicit progress phrases produce task choices before mutation; the parent applies the same check-in proposal and staged journal as the calendar. Home intake reloads task rows and reuses matching incomplete title/subject pairs on retries. A saved snapshot is then propagated to the hidden calendar through a one-shot refresh command. Per-workspace conversation state lives in tab-scoped sessionStorage for the current local date; it is best-effort draft persistence, separate from task and plan storage. Dark theme tokens and responsive home styles preserve keyboard focus and reduced-motion behavior.
+
+
+Assistant identity is a separate, Zod-validated per-workspace localStorage record (name, tone, avatar), with a default on missing/corrupt data. New assistant messages pass through a pure voice formatter; persisted historical text is restored verbatim, and planner outputs remain untouched. Personality settings save before updating the visible identity. Code-native SVG avatars respect reduced-motion preferences and are decorative to assistive technology.

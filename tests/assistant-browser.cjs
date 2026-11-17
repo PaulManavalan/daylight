@@ -1,0 +1,37 @@
+const {chromium}=require(require('node:path').join(process.env.USERPROFILE,'.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright'));
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const temp=path.resolve('artifacts/assistant-browser-temp');fs.mkdirSync(temp,{recursive:true});process.env.TEMP=temp;process.env.TMP=temp;
+(async()=>{
+ let server,browser;
+ try{
+  server=require('node:child_process').spawn(process.execPath,['node_modules/next/dist/bin/next','start','--hostname','127.0.0.1','--port','3101'],{stdio:['ignore','pipe','pipe'],windowsHide:true});
+  await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Server timed out')),20000);server.stdout.on('data',d=>{if(String(d).includes('Ready')){clearTimeout(timer);resolve();}});server.on('error',reject);});
+  browser=await chromium.launch({channel:'msedge',headless:true});
+  const page=await browser.newPage({viewport:{width:1440,height:1080},timezoneId:'America/New_York'}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await page.clock.setFixedTime(new Date('2026-11-16T14:00:00-05:00'));
+  await page.goto('http://127.0.0.1:3101',{waitUntil:'networkidle'});
+  await page.getByRole('navigation',{name:'Workspace',exact:true}).getByRole('button',{name:'Plan with me',exact:true}).click();
+  const assistant=page.getByRole('region',{name:'Planning assistant',exact:true});
+  async function say(text){await assistant.getByRole('textbox',{name:'Your reply',exact:true}).fill(text);await assistant.getByRole('button',{name:'Send',exact:true}).click();}
+  await say('Math, English');await say('Assistant worksheet 30 min due tomorrow; Assistant revision 45 min due Friday');await say('none');
+  await say('Assistant soccer 4-6pm; Assistant meetup 7-8');await say('Assistant laundry 20 min; Assistant portfolio 45 min due Friday');
+  await assistant.getByRole('heading',{name:'Your day, ready to review',exact:true}).waitFor();
+  assert.equal(await assistant.locator('fieldset').count(),6);
+  const event=assistant.locator('fieldset').filter({has:page.locator('input[value="Assistant meetup"]')});
+  await event.locator('input[type=time]').nth(0).fill('19:00');await event.locator('input[type=time]').nth(1).fill('20:00');
+  const before=await page.evaluate(()=>JSON.parse(localStorage.getItem('daylight.tasks.v1')).length);
+  await page.evaluate(()=>{const set=Storage.prototype.setItem;let fail=true;Storage.prototype.setItem=function(key,value){if(fail && key==='daylight.planning.v1.local-demo' && String(value).includes('Assistant soccer')){fail=false;throw new DOMException('Test quota failure','QuotaExceededError');}return set.call(this,key,value);};});
+  await assistant.getByRole('button',{name:'Build my day',exact:true}).click();await assistant.getByRole('alert').waitFor();
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('daylight.tasks.v1')).length),before+4,'partial save retains tasks');
+  await assistant.getByRole('button',{name:'Build my day',exact:true}).click();
+  await page.getByRole('status').filter({hasText:'Your conversation is now a plan'}).waitFor();
+  const saved=await page.evaluate(()=>({tasks:JSON.parse(localStorage.getItem('daylight.tasks.v1')),planning:JSON.parse(localStorage.getItem('daylight.planning.v1.local-demo'))}));
+  assert.equal(saved.tasks.length,before+4,'retry does not duplicate tasks');assert.ok(saved.planning.fixed.some(b=>b.title==='Assistant soccer' && b.start==='16:00' && b.end==='18:00'));assert.ok(saved.planning.sessions.length>0);
+  assert.equal(await page.locator('.error-banner:visible').count(),0);assert.deepEqual(errors,[]);
+  await page.getByRole('navigation',{name:'Workspace',exact:true}).getByRole('button',{name:'Plan with me',exact:true}).click();
+  await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await page.screenshot({path:'artifacts/daylight-assistant-mobile.png',fullPage:true});
+  console.log('Assistant browser passed: guided subjects, multiple homework tasks, events, ambiguous-time review, outside work, partial-save retry, deduplication, automatic plan, and mobile layout.');
+ }finally{await browser?.close();server?.kill();}
+})().catch(e=>{console.error(e);process.exitCode=1;});

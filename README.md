@@ -84,13 +84,19 @@ Keep this time pins a future study session through automatic replanning. Hard de
 
 Gentle pace adds 15% of otherwise usable capacity to the daily reserve, caps sessions at 35 minutes, and uses at least 15-minute breaks. Balanced follows the configured limits. Compact favors earlier, fuller placement while preserving explicit limits. Default energy is used only for tasks with no energy setting.
 
+### Conversational planning
+
+Open **Plan with me** in the sidebar, or choose **Talk through my day** above the task list. The guided local assistant asks about subjects, each subject's new assignments, after-school commitments, and outside-school work. A reply can contain multiple items separated by semicolons or newlines. It recognizes minute/hour estimates, due today/tomorrow/weekdays/ISO dates, explicit am/pm deadlines, and protected-time ranges such as soccer 4–6pm. Missing estimates default to 30 minutes and day-only deadlines to 11:59pm. Ambiguous clocks need confirmation; unfamiliar deadline language stays unset. Review and edit titles, subjects, duration, deadlines, priority, energy, and event times before **Build my day** saves and schedules everything. Events are one-time; recurring events stay in Calendar.
+
+The conversation stays available while navigating views in the same workspace, but unsaved conversation drafts do not survive a page reload. This is a guided conversation with deterministic extraction, not an unrestricted LLM chat. It needs no account, AI API, or paid key. Existing incomplete tasks with the same title and subject are reused, including during retries after a partial task save; the assistant does not overwrite them. Task storage and planning storage remain separate, and failed calendar saves leave the review available to retry. Run **node tests/assistant-browser.cjs** after a build for the isolated end-to-end conversation and save-recovery checks.
+
 ### Free by default
 
 The primary planning and check-in flows run entirely on the device, with no AI endpoint, provider key, account, or paid service. The old paid-provider endpoint and adapter have been removed. No free-tier model dependency is introduced; those services are optional future enhancements. Natural-language check-ins are not implemented in this phase.
 
 ### Verification
 
-Run pnpm typecheck, pnpm test, and pnpm build. The 64 domain tests cover recurrence, deadlines, capacity, energy, pace, locks, deterministic output, partial days, persistent skip, and storage recovery. Run node tests/browser-smoke.cjs --serve to start an isolated production test server, or run without --serve against port 3000. Set PLAYWRIGHT_MODULE to an installed Playwright package path when outside the Codex bundled runtime. This exercises native drag/drop (including an invalid drop), manual moves, expanded preferences, stuck restart sessions, completed sessions, persistent skip/resume, an interrupted-save recovery, export, and offline planning with zero AI requests, alongside task CRUD and mobile layout.
+Run pnpm typecheck, pnpm test, and pnpm build. The 73 domain tests cover recurrence, deadlines, capacity, energy, pace, locks, deterministic output, partial days, persistent skip, and storage recovery. Run node tests/browser-smoke.cjs --serve to start an isolated production test server, or run without --serve against port 3000. Set PLAYWRIGHT_MODULE to an installed Playwright package path when outside the Codex bundled runtime. This exercises native drag/drop (including an invalid drop), manual moves, expanded preferences, stuck restart sessions, completed sessions, persistent skip/resume, an interrupted-save recovery, export, and offline planning with zero AI requests, alongside task CRUD and mobile layout.
 
 ### Remaining integrations
 

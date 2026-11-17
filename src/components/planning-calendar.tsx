@@ -10,7 +10,7 @@ import { SessionDetails } from "./session-details";
 import { PlanningStore } from "@/lib/planning-store";
 import { PlanningPreferencesDialog } from "./planning-preferences";
 
-export interface CalendarCommand {id:number;action:"plan_day"|"show_day"|"check_in";taskId?:string}
+export interface CalendarCommand {id:number;action:"plan_day"|"show_day"|"check_in"|"conversation_plan";taskId?:string}
 type Props = { command?:CalendarCommand|null; onCommandHandled?:(id:number)=>void; visible: boolean; addTask: () => void; openPreferences: () => void; tasks: Task[]; owner: string; preferencesOpen: boolean; closePreferences: () => void; saveTask: (input: TaskInput, id?: string) => Promise<void>; editTask: (task: Task) => void; registerExport: (state: PlanningState) => void };
 const timeLabel = (d: Date) => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 const localInput = (iso: string) => { const d = new Date(iso); return `${dateKey(d)}T${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; };
@@ -67,6 +67,15 @@ export function PlanningCalendar({ command, onCommandHandled, visible, addTask, 
   useEffect(()=>{
     if(!state || busy || needsRecovery || !command || handledCommand.current===command.id)return;
     handledCommand.current=command.id;onCommandHandled?.(command.id);
+    if(command.action==="conversation_plan"){
+      try {
+        const loaded=store.load();savedRaw.current=loaded.raw;observedTasks.current=taskSignature(taskRef.current);setState(loaded.state);setProblem("");
+        setUnplaced(loaded.state.lastPlan?.unplaced ?? []);setChanges(loaded.state.lastPlan?.changes ?? []);setWarnings(loaded.state.lastPlan?.warnings ?? []);
+        setMessage("Your conversation is now a plan. Tasks and protected events are saved; anything that cannot fit is listed below.");
+        setDate(dateKey(new Date()));setMode("day");setRevision(r=>r+1);
+      }catch(e){setProblem(e instanceof Error?e.message:"The plan is saved, but could not be opened. Reload safely.");}
+      return;
+    }
     if(command.action==="plan_day"){void runPlan(1);return;}
     setDate(dateKey(new Date()));setMode("day");
     if(command.action==="check_in" && tasks.some(t=>t.id===command.taskId && t.status!=="done")){setCheckTask(command.taskId!);setMinutes(30);setProblem("");}

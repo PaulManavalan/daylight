@@ -19,6 +19,7 @@ async function smoke() {
   page.on("pageerror", error => errors.push(error.message));
   try {
     await page.goto(process.argv.includes("--serve") ? "http://127.0.0.1:3100" : "http://127.0.0.1:3000", { waitUntil: "networkidle" });
+    await page.getByRole("button", { name: "All tasks", exact: true }).click();
     await page.getByRole("button", { name: "Draft the history essay", exact: true }).waitFor();
     assert.equal(await page.locator("tbody tr").count(), 7);
     fs.mkdirSync("artifacts", { recursive: true });
@@ -30,6 +31,7 @@ async function smoke() {
     await page.getByRole("dialog").getByRole("button", { name: "Add task", exact: true }).click();
     await page.getByRole("button", { name: "Browser smoke task", exact: true }).waitFor();
     await page.reload({ waitUntil: "networkidle" });
+    await page.getByRole("button", { name: "All tasks", exact: true }).click();
     await page.getByRole("button", { name: "Browser smoke task", exact: true }).click();
     assert.equal(await page.getByRole("spinbutton", { name: "Remaining (minutes)" }).inputValue(), "50");
     await page.getByRole("textbox", { name: "Task title" }).fill("Edited browser task");
@@ -63,11 +65,9 @@ async function smoke() {
     await page.getByRole("button",{name:"Delete Detailed capture regression",exact:true}).click();
     await page.getByRole("dialog").getByRole("button",{name:"Delete task",exact:true}).click();
     await page.getByRole("navigation",{name:"Workspace"}).getByRole("button",{name:/^Today/}).click();
-    await page.getByRole("region",{name:"Today's agenda"}).getByRole("button",{name:"Plan my day",exact:true}).click();
-    await page.getByRole("status").filter({hasText:"Local planner:"}).waitFor();
-    assert.equal(await page.getByRole("button",{name:"day",exact:true}).getAttribute("aria-pressed"),"true","Today planning opens the day calendar");
-    await page.getByRole("navigation",{name:"Workspace"}).getByRole("button",{name:/^Today/}).click();
-    await page.getByRole("region",{name:"Today's agenda"}).getByRole("button",{name:"Check in",exact:true}).first().click();
+    await page.getByRole("complementary",{name:"Your day plan",exact:true}).getByRole("button",{name:"Rebalance",exact:true}).click();
+    await page.getByRole("complementary",{name:"Your day plan",exact:true}).getByRole("button",{name:"Rebalance",exact:true}).waitFor();
+    await page.getByRole("complementary",{name:"Your day plan",exact:true}).locator(".timeline-check").first().click();
     await page.getByRole("dialog").getByRole("button",{name:"Done",exact:true}).waitFor();
     await page.getByRole("dialog").getByRole("button",{name:"Close",exact:true}).click();
     await page.getByRole("button", { name: "Calendar", exact: true }).click();
@@ -171,6 +171,7 @@ async function smoke() {
     await page.context().setOffline(false);
     assert.deepEqual(externalPlanningRequests,[],"core planning never calls an external AI endpoint");
     await page.reload({ waitUntil: "networkidle" });
+    await page.getByRole("button", { name: "All tasks", exact: true }).click();
     await page.getByRole("button", { name: "Calendar", exact: true }).click();
     await page.getByText("Recent check-ins (6)", { exact: true }).waitFor();
     await page.screenshot({ path: "artifacts/daylight-calendar-desktop.png", fullPage: true });
@@ -186,7 +187,7 @@ async function smoke() {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, "page must not overflow horizontally");
     await page.getByRole("navigation",{name:"Workspace"}).getByRole("button",{name:/^Today/}).click();
     await page.screenshot({path:"artifacts/daylight-today-mobile.png",fullPage:true});
-    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,"daily agenda stays within the mobile viewport");
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,"assistant home stays within the mobile viewport");
     assert.deepEqual(errors, []);
     console.log("Browser smoke passed: task CRUD, filters, calendar planning, protected time, preferences, adaptive check-in, persistence, desktop and mobile layout; no page errors.");
   } catch(error) { await page.screenshot({path:"artifacts/daylight-browser-failure.png",fullPage:true}); console.error("Browser state:",await page.locator(".error-banner,.plan-message,.drop-preview").allTextContents()); throw error; } finally { await browser.close(); }

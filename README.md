@@ -84,11 +84,17 @@ Keep this time pins a future study session through automatic replanning. Hard de
 
 Gentle pace adds 15% of otherwise usable capacity to the daily reserve, caps sessions at 35 minutes, and uses at least 15-minute breaks. Balanced follows the configured limits. Compact favors earlier, fuller placement while preserving explicit limits. Default energy is used only for tasks with no energy setting.
 
-### Conversational planning
+### Assistant-first day planning
 
-Open **Plan with me** in the sidebar, or choose **Talk through my day** above the task list. The guided local assistant asks about subjects, each subject's new assignments, after-school commitments, and outside-school work. A reply can contain multiple items separated by semicolons or newlines. It recognizes minute/hour estimates, due today/tomorrow/weekdays/ISO dates, explicit am/pm deadlines, and protected-time ranges such as soccer 4–6pm. Missing estimates default to 30 minutes and day-only deadlines to 11:59pm. Ambiguous clocks need confirmation; unfamiliar deadline language stays unset. Review and edit titles, subjects, duration, deadlines, priority, energy, and event times before **Build my day** saves and schedules everything. Events are one-time; recurring events stay in Calendar.
+Daylight opens on **Your day**: the assistant is the main workspace, alongside a live timeline with protected commitments, flexible study, recovery, progress updates, and unplaced work. Task lists and the full calendar remain supporting views. The whole application uses a dark charcoal and sage theme, including forms, dialogs, and calendar blocks; reduced-motion settings are respected.
 
-The conversation stays available while navigating views in the same workspace, but unsaved conversation drafts do not survive a page reload. This is a guided conversation with deterministic extraction, not an unrestricted LLM chat. It needs no account, AI API, or paid key. Existing incomplete tasks with the same title and subject are reused, including during retries after a partial task save; the assistant does not overwrite them. Task storage and planning storage remain separate, and failed calendar saves leave the review available to retry. Run **node tests/assistant-browser.cjs** after a build for the isolated end-to-end conversation and save-recovery checks.
+Tell Daylight about the whole day in one message, for example **Math: worksheet 30 min due tomorrow; soccer 4–6pm; laundry 20 min**. Or choose **Help me get started** for subject-by-subject questions about homework, after-school events, and outside-school work. Review uncertain details before **Build my day**. The schedule updates alongside the conversation and keeps you on the home screen. Day-only deadlines mean 11:59pm; missing estimates default to 30 minutes; unfamiliar deadline language stays unset and ambiguous event times require confirmation. New conversation events are one-time; recurring events stay editable in Calendar.
+
+After planning, say **I need 30 minutes more time on my essay**, **I'm stuck**, **I worked on my worksheet for 20 min**, or **I finished my essay**. Choose the target task before any progress mutation. Updates reuse the recoverable check-in journal and adaptive local engine, keeping fixed commitments and hard deadlines intact. Ask **What's next?** to summarize saved plans, or **Rebalance my day** to arrange existing work. Study preferences stay available within the conversation.
+
+Today's conversation is retained in this tab's sessionStorage per workspace and restored on a same-day reload. It stays mounted while you browse other views. This is local deterministic conversational planning, not an unrestricted LLM chat; no account, model API, or paid key is required. Matching incomplete tasks are reused on retry, and failed calendar writes leave the review available. Session draft storage is best-effort; persisted tasks and planning snapshots remain separate.
+
+Run **node tests/assistant-browser.cjs** after a build to verify the assistant home, direct day capture, guided capture, failed-save recovery, stuck/more-time/completion updates, conversation restore, and dark mobile layout.
 
 ### Free by default
 
@@ -96,7 +102,7 @@ The primary planning and check-in flows run entirely on the device, with no AI e
 
 ### Verification
 
-Run pnpm typecheck, pnpm test, and pnpm build. The 73 domain tests cover recurrence, deadlines, capacity, energy, pace, locks, deterministic output, partial days, persistent skip, and storage recovery. Run node tests/browser-smoke.cjs --serve to start an isolated production test server, or run without --serve against port 3000. Set PLAYWRIGHT_MODULE to an installed Playwright package path when outside the Codex bundled runtime. This exercises native drag/drop (including an invalid drop), manual moves, expanded preferences, stuck restart sessions, completed sessions, persistent skip/resume, an interrupted-save recovery, export, and offline planning with zero AI requests, alongside task CRUD and mobile layout.
+Run pnpm typecheck, pnpm test, and pnpm build. The 80 domain tests cover recurrence, deadlines, capacity, energy, pace, locks, deterministic output, partial days, persistent skip, and storage recovery. Run node tests/browser-smoke.cjs --serve to start an isolated production test server, or run without --serve against port 3000. Set PLAYWRIGHT_MODULE to an installed Playwright package path when outside the Codex bundled runtime. This exercises native drag/drop (including an invalid drop), manual moves, expanded preferences, stuck restart sessions, completed sessions, persistent skip/resume, an interrupted-save recovery, export, and offline planning with zero AI requests, alongside task CRUD and mobile layout.
 
 ### Remaining integrations
 

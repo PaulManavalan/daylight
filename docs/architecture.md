@@ -33,7 +33,7 @@ Other task edits refresh an existing plan. Task deletion removes related visible
 
 ## Daily workflow
 
-Inline quick capture uses the same task schema and repository as the full editor. Expanding Details preserves title, subject, and estimates; canceling returns to the draft. Today combines scheduled work (including undated tasks), fixed commitments, and recovery into a chronological agenda. It exposes direct check-ins and planning actions through one-shot calendar commands. Command IDs are monotonic and acknowledged on consumption; workspace switches clear pending commands.
+Inline quick capture uses the same task schema and repository as the full editor. Expanding Details preserves title, subject, and estimates; canceling returns to the draft. Today is the default assistant-first workspace, pairing an ongoing conversation with a chronological day timeline, including undated tasks, fixed commitments, and recovery. There is no separate assistant navigation tab. It exposes direct check-ins and planning actions through one-shot calendar commands. Command IDs are monotonic and acknowledged on consumption; workspace switches clear pending commands.
 
 ## Calendar interaction
 
@@ -44,3 +44,6 @@ Day/week views share the same state. Fixed commitments are striped; flexible stu
 The test suite exercises scheduling, adaptive changes, lock conflicts, deterministic output, old snapshot migration, storage failures, and task CRUD. The headless browser regression covers native dragging, invalid drops, preferences, completion, export, skip/resume, an interrupted save, offline local planning, and mobile layouts.
 
 The existing Supabase planning tables remain future cloud-sync infrastructure; this client does not write schedules to those tables. Google Calendar sync, background notifications, import, and full offline page installation/caching are outside this release. Local planning works without network access once the app is loaded. No paid-provider API route remains.
+
+
+The home assistant supports either a mixed day brief or guided subject/event/outside-work intake. It reviews drafts before writing and remains on the home workspace after planning. Explicit progress phrases produce task choices before mutation; the parent applies the same check-in proposal and staged journal as the calendar. Home intake reloads task rows and reuses matching incomplete title/subject pairs on retries. A saved snapshot is then propagated to the hidden calendar through a one-shot refresh command. Per-workspace conversation state lives in tab-scoped sessionStorage for the current local date; it is best-effort draft persistence, separate from task and plan storage. Dark theme tokens and responsive home styles preserve keyboard focus and reduced-motion behavior.

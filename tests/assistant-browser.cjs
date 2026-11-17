@@ -2,17 +2,18 @@ const {chromium}=require(require('node:path').join(process.env.USERPROFILE,'.cac
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const temp=path.resolve('artifacts/assistant-browser-temp');fs.mkdirSync(temp,{recursive:true});process.env.TEMP=temp;process.env.TMP=temp;
 (async()=>{
- let server,browser;
+ let server,browser,page;
  try{
   server=require('node:child_process').spawn(process.execPath,['node_modules/next/dist/bin/next','start','--hostname','127.0.0.1','--port','3101'],{stdio:['ignore','pipe','pipe'],windowsHide:true});
   await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Server timed out')),20000);server.stdout.on('data',d=>{if(String(d).includes('Ready')){clearTimeout(timer);resolve();}});server.on('error',reject);});
   browser=await chromium.launch({channel:'msedge',headless:true});
-  const page=await browser.newPage({viewport:{width:1440,height:1080},timezoneId:'America/New_York'}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+  page=await browser.newPage({viewport:{width:1440,height:1080},timezoneId:'America/New_York'});const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.emulateMedia({reducedMotion:'reduce'});
   await page.clock.setFixedTime(new Date('2026-11-16T14:00:00-05:00'));
   await page.goto('http://127.0.0.1:3101',{waitUntil:'networkidle'});
-  await page.getByRole('navigation',{name:'Workspace',exact:true}).getByRole('button',{name:'Plan with me',exact:true}).click();
+  await page.getByRole('region',{name:'Planning assistant',exact:true}).waitFor();
   const assistant=page.getByRole('region',{name:'Planning assistant',exact:true});
+  await page.screenshot({path:'artifacts/daylight-dark-home-initial.png',fullPage:true});
   async function say(text){await assistant.getByRole('textbox',{name:'Your reply',exact:true}).fill(text);await assistant.getByRole('button',{name:'Send',exact:true}).click();}
   await say('Math, English');await say('Assistant worksheet 30 min due tomorrow; Assistant revision 45 min due Friday');await say('none');
   await say('Assistant soccer 4-6pm; Assistant meetup 7-8');await say('Assistant laundry 20 min; Assistant portfolio 45 min due Friday');
@@ -25,13 +26,35 @@ const temp=path.resolve('artifacts/assistant-browser-temp');fs.mkdirSync(temp,{r
   await assistant.getByRole('button',{name:'Build my day',exact:true}).click();await assistant.getByRole('alert').waitFor();
   assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('daylight.tasks.v1')).length),before+4,'partial save retains tasks');
   await assistant.getByRole('button',{name:'Build my day',exact:true}).click();
-  await page.getByRole('status').filter({hasText:'Your conversation is now a plan'}).waitFor();
+  await assistant.getByRole('status').filter({hasText:'Your day is up to date'}).waitFor();
   const saved=await page.evaluate(()=>({tasks:JSON.parse(localStorage.getItem('daylight.tasks.v1')),planning:JSON.parse(localStorage.getItem('daylight.planning.v1.local-demo'))}));
   assert.equal(saved.tasks.length,before+4,'retry does not duplicate tasks');assert.ok(saved.planning.fixed.some(b=>b.title==='Assistant soccer' && b.start==='16:00' && b.end==='18:00'));assert.ok(saved.planning.sessions.length>0);
   assert.equal(await page.locator('.error-banner:visible').count(),0);assert.deepEqual(errors,[]);
-  await page.getByRole('navigation',{name:'Workspace',exact:true}).getByRole('button',{name:'Plan with me',exact:true}).click();
+  await page.getByRole('region',{name:'Planning assistant',exact:true}).waitFor();
+  assert.ok(await page.getByRole('complementary',{name:'Your day plan',exact:true}).isVisible());
+  await page.screenshot({path:'artifacts/daylight-dark-home-desktop.png',fullPage:true});
+  await say("I'm stuck on Assistant worksheet");
+  await assistant.locator('.assistant-task-picks').getByRole('button',{name:/Assistant worksheet/}).click();
+  await assistant.getByText(/Try the small restart step first/).waitFor();
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('daylight.tasks.v1')).find(t=>t.title==='Assistant worksheet').remaining_minutes),45);
+  await say('I need 30 min more time on Assistant worksheet');
+  await assistant.locator('.assistant-task-picks').getByRole('button',{name:/Assistant worksheet/}).click();
+  await assistant.getByText(/75 minutes left/).waitFor();
+  await say('I finished Assistant worksheet');
+  await assistant.locator('.assistant-task-picks').getByRole('button',{name:/Assistant worksheet/}).click();
+  await assistant.getByText(/reclaimed its remaining time/).waitFor();
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('daylight.tasks.v1')).find(t=>t.title==='Assistant worksheet').status),'done');
+  await page.reload({waitUntil:'networkidle'});
+  await assistant.getByText(/reclaimed its remaining time/).waitFor();
+  await assistant.getByRole('button',{name:'Start a fresh conversation',exact:true}).click();
+  await say('Math: Home brain dump 25 min due tomorrow; Home piano practice 4-5pm; Laundry test 20 min');
+  assert.equal(await assistant.locator('fieldset').count(),3);
+  await assistant.getByRole('button',{name:'Build my day',exact:true}).click();
+  await assistant.getByRole('status').filter({hasText:'Your day is up to date'}).waitFor();
+  assert.equal(await page.getByRole('navigation',{name:'Workspace',exact:true}).getByRole('button',{name:'Plan with me',exact:true}).count(),0,'assistant is the home workspace, not a separate tab');
+  assert.equal(await page.evaluate(()=>getComputedStyle(document.documentElement).colorScheme),'dark');
   await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   await page.screenshot({path:'artifacts/daylight-assistant-mobile.png',fullPage:true});
-  console.log('Assistant browser passed: guided subjects, multiple homework tasks, events, ambiguous-time review, outside work, partial-save retry, deduplication, automatic plan, and mobile layout.');
- }finally{await browser?.close();server?.kill();}
+  console.log('Assistant home passed: direct brain dump, guided intake, protected time, save recovery, progress/stuck/more-time adaptation, session restore, dark theme, and responsive layout.');
+ }catch(e){if(page){await page.screenshot({path:'artifacts/assistant-failure.png',fullPage:true});console.error(await page.locator('.error-banner').allTextContents());}throw e;}finally{await browser?.close();server?.kill();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

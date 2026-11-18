@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "./ui/dial
 import { TaskEditor } from "./task-editor";
 import { QuickCapture } from "./quick-capture";
 import { PlanningAssistant } from "./planning-assistant";
+import {checkReviewedEdits,sameTaskValues,type ReviewedTaskEdit} from "@/lib/assistant-brain";
 import { sameTask } from "@/lib/planning-conversation";
 import { PlanningStore } from "@/lib/planning-store";
 import { taskInputSchema } from "@/lib/types";
@@ -133,7 +134,7 @@ export function Planner() {
   },[view,subject]);
   function navigate(next: View) { setView(next); setSubject("all"); setStatus("all"); setDeadline("all"); setSearch(""); }
   function openToday(action:CalendarCommand["action"]="show_day",taskId?:string){navigate("calendar");setCalendarCommand({id:++calendarCommandId.current,action,taskId});}
-  async function buildFromConversation(inputs:TaskInput[],fixed:import("@/lib/scheduling").FixedBlock[]) {
+  async function buildFromConversation(inputs:TaskInput[],fixed:import("@/lib/scheduling").FixedBlock[],edits:ReviewedTaskEdit[]=[]) {
     const current=epoch.current;
     const store=new PlanningStore(window.localStorage,user?.id ?? "local-demo");
     if(store.hasPending())throw new Error("Finish recovering the pending check-in before building a new day.");
@@ -144,6 +145,8 @@ export function Planner() {
     const validatedFixed=fixed.map(block=>fixedSchema.parse(block));
     const rows=await repository.list();
     if(current!==epoch.current)throw new Error("Workspace changed. Open the assistant in the current account.");
+    checkReviewedEdits(rows,edits);
+    for(const edit of edits){const row=rows.find(t=>t.id===edit.taskId)!;if(sameTaskValues(row,edit.after))continue;const saved=await repository.save(edit.after,edit.taskId);if(current!==epoch.current)throw new Error("Workspace changed while saving. Review the original account before retrying.");rows.splice(rows.findIndex(t=>t.id===saved.id),1,saved);setTasks([...rows]);}
     for(const input of validated){
       if(rows.some(t=>t.status!=="done" && sameTask(t,input)))continue;
       const saved=await repository.save(input);

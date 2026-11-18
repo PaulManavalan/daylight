@@ -18,6 +18,7 @@ async function smoke() {
   const errors = [];
   page.on("pageerror", error => errors.push(error.message));
   try {
+    await page.route('**/api/assistant',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({available:false})}));
     await page.goto(process.argv.includes("--serve") ? "http://127.0.0.1:3100" : "http://127.0.0.1:3000", { waitUntil: "networkidle" });
     await page.getByRole("button", { name: "All tasks", exact: true }).click();
     await page.getByRole("button", { name: "Draft the history essay", exact: true }).waitFor();

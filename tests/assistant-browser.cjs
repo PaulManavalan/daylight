@@ -10,6 +10,7 @@ const temp=path.resolve('artifacts/assistant-browser-temp');fs.mkdirSync(temp,{r
   page=await browser.newPage({viewport:{width:1440,height:1080},timezoneId:'America/New_York'});const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.emulateMedia({reducedMotion:'reduce'});
   await page.clock.setFixedTime(new Date('2026-11-16T14:00:00-05:00'));
+    await page.route('**/api/assistant',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({available:false})}));
   await page.goto('http://127.0.0.1:3101',{waitUntil:'networkidle'});
   await page.getByRole('region',{name:'Planning assistant',exact:true}).waitFor();
   const assistant=page.getByRole('region',{name:'Planning assistant',exact:true});

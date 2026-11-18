@@ -113,3 +113,15 @@ Run pnpm typecheck, pnpm test, and pnpm build. The 83 domain tests cover recurre
 ### Remaining integrations
 
 Cloud planning synchronization with transactional versioning, editable account timezones, Google Calendar sync, and closed-app reminders remain future work. Existing Supabase planning tables are not written by this browser-local implementation.
+
+### Conversational model development (November 17, 2026)
+
+The assistant can use an installed Ollama model on localhost, or an optional WebGPU browser model on a hosted app. Enable browser AI under AI settings; it requires a substantial first download. Without a language model, the app labels its guided planner mode explicitly. Conversation history and current tasks feed the model, while validated proposals await review before changing saved work. Unclear requests should produce a clarification rather than automatic task defaults. Schedule explanation requests are read-only. Follow-up questions keep pending progress proposals available.
+
+The local API runs only on localhost and does not expose the local Ollama service to hosted visitors. The current Next.js server build requires a compatible server host; the existing Sites static manifest is not a deployment configuration for this API. Browser-model support remains optional and needs device-specific verification. Use `pnpm exec next build --webpack` if Turbopack fails to launch its CSS process in the Windows sandbox.
+
+### Hosted export
+
+Run `pnpm build:hosted` to prepare `out/` for the existing Sites static manifest. The export builds an isolated copy under ignored `artifacts/`, excludes the localhost-only API, and leaves the normal Next.js server build intact. Hosted users can enable conversational AI with the visible on-device model button. Hosted export does not itself publish the app. Local/server builds use `pnpm exec next build --webpack` and `pnpm start`.
+
+Successful draft saves clear unsaved model context, preventing old tasks and events from returning as new proposals. Enter sends a chat message; Shift+Enter inserts a line break.

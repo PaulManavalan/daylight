@@ -1,0 +1,111 @@
+/* Daylight's finishing layer: light, depth, and motion tied to interaction. */
+:root {
+  --ease-settle: cubic-bezier(.16, 1, .3, 1);
+  --surface-edge: #9fc78b26;
+}
+.main-shell {
+  background: radial-gradient(ellipse at 75% 0%, #758c5c0e, transparent 50%),
+    radial-gradient(ellipse at 0% 48%, #5c8c7808, transparent 48%);
+}
+.topbar { background: #15201b94; }
+.day-hero h1 em {
+  color: #c3d6b2;
+  text-shadow: 0 3px 35px #9ebc6d16;
+}
+.hero-date { border-right: 2px solid #9ebc6d45; padding-right: 16px; }
+.planning-assistant, .day-plan, .calendar-card, .task-section {
+  border-color: var(--surface-edge);
+  box-shadow: 0 1px 0 #dbedc708 inset, 0 14px 40px -24px #0009;
+}
+.planning-assistant { background: linear-gradient(155deg, #1c2821, #17201c 55%); }
+.assistant-identity { background: linear-gradient(100deg, #b6d28b07, transparent 70%); }
+.day-plan { background: linear-gradient(155deg, #212e24, #171f1d 70%); }
+.assistant-message.from-you {
+  background: linear-gradient(135deg, #31452f, #26372b);
+  border-color: #9bc17d30;
+  box-shadow: 0 3px 14px -10px #000a;
+}
+.assistant-message.from-daylight { border-color: #a8c59212; }
+.assistant-composer {
+  background: linear-gradient(135deg, #16201a, #121c18);
+  box-shadow: 0 2px 8px #0002 inset;
+}
+.assistant-composer:focus-within {
+  border-color: #a6c887a3;
+  box-shadow: 0 0 0 4px #a6c8870b, 0 5px 24px -14px #a6c88740;
+}
+.nav-item, .subject-nav { position: relative; }
+.nav-item.active {
+  background: linear-gradient(100deg, #8ebd7926, #8ebd790b);
+  box-shadow: 0 0 0 1px #c3d8ad12 inset;
+  color: #d2e5be;
+}
+.nav-item.active::before {
+  content: ""; position: absolute; left: 0; top: 28%; bottom: 28%;
+  width: 2px; border-radius: 5px; background: #b8d79a;
+  box-shadow: 0 0 12px #b8d79a45;
+}
+.stat-card { background: linear-gradient(135deg, #1e2b22, #18211d); }
+.stat-icon { box-shadow: 0 0 0 1px #c3d8ad0c inset; }
+.daylight-button {
+  position: relative; overflow: hidden;
+  transition: background-color 180ms ease, color 180ms ease,
+    border-color 180ms ease, box-shadow 220ms ease, transform 220ms var(--ease-settle);
+}
+.daylight-button[data-variant="default"] {
+  background-image: linear-gradient(160deg, #ffffff1c, #ffffff00 65%);
+  box-shadow: 0 1px 0 #ffffff26 inset, 0 3px 10px -6px #0008;
+}
+.daylight-button[data-variant="default"]::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(105deg, transparent 20%, #ffffff24 50%, transparent 80%);
+  transform: translateX(-120%);
+}
+.daylight-button:focus-visible { box-shadow: 0 0 0 4px #a6c88726; }
+.daylight-dialog-content { border-color: #a9c58b38; }
+.daylight-dialog-content[data-state="open"] { animation: daylight-dialog-in 320ms var(--ease-settle) both; }
+.daylight-dialog-content[data-state="closed"] { animation: daylight-dialog-out 140ms ease both; }
+.assistant-message { animation: daylight-message-in 340ms var(--ease-settle) both; }
+.brain-proposal, .assistant-review { animation: daylight-reveal 360ms var(--ease-settle) both; }
+.assistant-success { animation: daylight-success 600ms ease both; }
+.toast { animation: daylight-toast-in 350ms var(--ease-settle) both; }
+.toast>svg { animation: check-land 400ms var(--ease-settle); }
+.day-timeline>li { animation-duration: 420ms; }
+.day-timeline>li:nth-child(2) { animation-delay: 35ms; }
+.day-timeline>li:nth-child(3) { animation-delay: 70ms; }
+.day-timeline>li:nth-child(4) { animation-delay: 105ms; }
+.thinking-dots { display: inline-flex; gap: 4px; align-items: center; }
+.thinking-dots i { width: 4px; height: 4px; border-radius: 50%; background: #b4d69d; animation: daylight-think 1.3s ease-in-out infinite; }
+.thinking-dots i:nth-child(2) { animation-delay: 150ms; }
+.thinking-dots i:nth-child(3) { animation-delay: 300ms; }
+.assistant-messages, .sidebar, .calendar-scroll { scrollbar-width: thin; scrollbar-color: #50634770 transparent; }
+@media (hover: hover) and (pointer: fine) {
+  .daylight-button:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 5px 16px -9px #b2ce8e60; }
+  .daylight-button[data-variant="default"]:not(:disabled):hover::after { animation: daylight-sheen 650ms ease; }
+  .nav-item:not(.active):hover, .subject-nav:hover { background: #a6c8870d; }
+  .nav-item svg, .subject-dot { transition: transform 260ms var(--ease-settle); }
+  .nav-item:hover svg { transform: translateX(2px); }
+  .subject-nav:hover .subject-dot { transform: scale(1.2); }
+  .stat-card:hover { border-color: #a6c88745; box-shadow: 0 8px 24px -18px #a6c88750; }
+  .day-plan-heading>button:hover { background: #35472e; }
+  .timeline-content { border-radius: 9px; transition: background-color 180ms ease; }
+  .day-timeline>li:hover .timeline-content { background: #a6c88706; }
+  tbody tr:hover { background: #a6c88709; }
+}
+.daylight-button:not(:disabled):active { transform: translateY(0) scale(.97); box-shadow: 0 1px 3px #0003 inset; }
+@keyframes daylight-sheen { to { transform: translateX(120%); } }
+@keyframes daylight-message-in { from { opacity: .3; translate: 0 8px; } to { opacity: 1; translate: 0 0; } }
+@keyframes daylight-reveal { from { opacity: .4; translate: 0 6px; } to { opacity: 1; translate: 0 0; } }
+@keyframes daylight-dialog-in { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes daylight-dialog-out { to { opacity: 0; transform: translateY(4px) scale(.985); } }
+@keyframes daylight-toast-in { from { opacity: 0; translate: 0 12px; } to { opacity: 1; translate: 0 0; } }
+@keyframes daylight-success { from { background-color: #45603b; } to { background-color: #243421; } }
+@keyframes daylight-think { 0%, 70%, 100% { opacity: .35; translate: 0 0; } 35% { opacity: 1; translate: 0 -3px; } }
+@media (max-width: 640px) {
+  .nav-item.active::before { left: 28%; right: 28%; top: auto; bottom: 0; width: auto; height: 2px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  .daylight-button:not(:disabled):hover, .daylight-button:not(:disabled):active,
+  .nav-item:hover svg, .subject-nav:hover .subject-dot { transform: none; }
+}

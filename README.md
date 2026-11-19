@@ -4,6 +4,8 @@ A calm student planner with a task database, day/week calendar, protected time, 
 
 ## Run locally
 
+On Windows, double-click **Start Daylight.cmd** in the project folder. It finds Node.js (including the existing Codex runtime), builds the app if necessary, and serves it at http://127.0.0.1:3102 without requiring `pnpm` on your PowerShell PATH. If Daylight is already responding, the launcher opens that instance; if a port is occupied or unresponsive, it tries ports through 3112 and opens the selected address. Browser-local records are separate for each port; changing ports does not delete records at the old address. Keep the launcher window open while using Daylight. Run `& ".\Start Daylight.cmd" --check` in PowerShell to check the runtime without starting a server.
+
 Requires Node.js 20.9+ and pnpm (or npm). Dependencies are locked in `pnpm-lock.yaml`.
 
 ```sh

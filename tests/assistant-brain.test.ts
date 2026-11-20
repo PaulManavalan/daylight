@@ -1,12 +1,19 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
 import {brainContext,modelDrafts,taskEdits,validateModelReply,checkReviewedEdits,type ModelReply} from "../src/lib/assistant-brain";
-import {modelMessages,isPlanExplanation,needsProgressClarification} from "../src/lib/model-messages";
+import {modelMessages,isPlanExplanation,isExploratoryConversation,needsProgressClarification} from "../src/lib/model-messages";
 import {localModelAllowed} from "../src/lib/local-model";
 import {defaults} from "../src/lib/scheduling";
 import type {Task} from "../src/lib/types";
 const now=new Date(2026,10,18,15),task:Task={id:"essay-1",title:"English essay",subject:"English",description:"PRIVATE NOTE: do not send",deadline:null,estimated_minutes:60,remaining_minutes:60,priority:"medium",energy_level:"high",status:"not_started",user_id:"local-demo",actual_minutes:0,created_at:now.toISOString(),updated_at:now.toISOString()};
 const empty=():ModelReply=>({reply:"Let's review this.",kind:"none",tasks:[],events:[],edits:[],progress:[]});
+test('exploratory support stays conversational even with saved assignments, while concrete actions remain available',()=>{
+ const request=(content:string)=>({persona:{name:'Sol',tone:'calm' as const},context:brainContext([task],defaults(),[],[],now),messages:[{role:'user' as const,content}]});
+ for(const text of ['I feel overwhelmed with homework. Can we talk through where to start?','I do not know where to start.','Could you help me think through my priorities?']){
+  const input=request(text);assert.equal(isExploratoryConversation(input),true);assert.match(modelMessages(input,false,'none')[0].content,/EXPLORATORY CONVERSATION/);
+ }
+ for(const text of ['I am overwhelmed. Add a math worksheet for 30 minutes.','I am overwhelmed; plan my day.','I finished the English essay.'])assert.equal(isExploratoryConversation(request(text)),false);
+});
 test("model responses cannot reference unknown tasks, mixed actions, or invalid progress",()=>{assert.throws(()=>validateModelReply({...empty(),kind:"progress",progress:[{taskId:"made-up",response:"Done",minutes:0}]},[task]),/identify/);assert.throws(()=>validateModelReply({...empty(),kind:"none",progress:[{taskId:task.id,response:"Done",minutes:0}]},[task]),/mixed/);assert.throws(()=>validateModelReply({...empty(),kind:"progress",progress:[{taskId:task.id,response:"Need more time",minutes:0}]},[task]),/five minutes/);assert.throws(()=>validateModelReply({...empty(),kind:"edit"},[task]),/incomplete/);});
 test("draft conversion keeps explicit local deadlines and never changes source tasks",()=>{const response=validateModelReply({...empty(),kind:"capture",tasks:[{title:"Study biology",subject:"Biology",minutes:45,priority:"high",energy:"high",dueDate:"2026-11-19",dueTime:"09:00"}],events:[{title:"Soccer",date:"2026-11-18",start:"16:00",end:"18:00"}]},[task]);const before=JSON.stringify(task),draft=modelDrafts(response,"original words");assert.equal(new Date(draft.tasks[0].deadline!).getHours(),9);assert.equal(draft.tasks[0].remaining_minutes,45);assert.equal(draft.events[0].end,"18:00");assert.equal(JSON.stringify(task),before);});
 test("date/time uncertainty and invalid clocks are rejected before saving",()=>{assert.throws(()=>validateModelReply({...empty(),kind:"capture",tasks:[{title:"Study",subject:"Math",minutes:30,priority:"medium",energy:null,dueDate:null,dueTime:"09:00"}]},[]),/confirm a date/);assert.throws(()=>validateModelReply({...empty(),kind:"capture",events:[{title:"Club",date:"2026-02-30",start:"16:00",end:"18:00"}]},[]));assert.throws(()=>taskEdits({...empty(),kind:"edit",edits:[{taskId:task.id,field:"deadline",value:"2026-11-20T28:00"}]},[task]),/real date and time/);});

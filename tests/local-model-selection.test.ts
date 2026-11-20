@@ -31,7 +31,7 @@ test('selected-model conversation calls only the fixed local tags/chat endpoints
   return new Response(JSON.stringify({message:{content:JSON.stringify(body.format.properties.kind?{kind:'none'}:{reply:'Which assignment feels most urgent right now?'})},done_reason:'stop'}));
  };
  t.after(()=>{globalThis.fetch=original;});
- const reply=await askLocalModel({localModel:'qwen3-vl:8b',persona:{name:'Sol',tone:'calm'},context:brainContext([],defaults(),[],[]),messages:[{role:'user',content:'I have too much homework and I do not know where to start.'}]},AbortSignal.timeout(1000));
+ const reply=await askLocalModel({localModel:'qwen3-vl:8b',persona:{name:'Sol',tone:'calm'},context:brainContext([],defaults(),[],[]),messages:[{role:'user',content:'Which assignment should I tackle first?'}]},AbortSignal.timeout(1000));
  assert.equal(reply.model,'qwen3-vl:8b');assert.equal(reply.result.kind,'none');assert.equal(reply.result.tasks.length,0);
  assert.equal(calls.length,3);assert.ok(calls.filter(c=>c.body).every(c=>c.body.model==='qwen3-vl:8b'));
  assert.ok(calls.every(c=>!c.url.includes('/pull') && c.url.startsWith('http://127.0.0.1:11434/')));

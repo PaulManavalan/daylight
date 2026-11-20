@@ -39,6 +39,8 @@ jobs:
         run: pnpm exec next build --webpack
       - name: Type-check the complete application
         run: pnpm typecheck
+      - name: Verify localhost API origin isolation
+        run: node tests/local-api.cjs
       - name: Build the hosted browser application
         run: pnpm run build:hosted
       - name: Check production dependency advisories

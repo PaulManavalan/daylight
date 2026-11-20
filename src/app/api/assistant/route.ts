@@ -1,14 +1,14 @@
 import {NextResponse} from "next/server";
 import {brainRequestSchema} from "@/lib/assistant-brain";
-import {askLocalModel,localModelAllowed,localModelOptions,selectLocalModel} from "@/lib/local-model";
+import {askLocalModel,localRequestOrigin,sameLocalOrigin,localModelOptions,selectLocalModel} from "@/lib/local-model";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 const headers={"Cache-Control":"no-store"};
 let active=false;
-export async function GET(request:Request){if(!localModelAllowed(request.url))return NextResponse.json({available:false,reason:"Enable the free browser model to use AI on this site."},{headers});try{const models=await localModelOptions(),model=selectLocalModel(models);return NextResponse.json({available:Boolean(model),model,models},{headers});}catch{return NextResponse.json({available:false,reason:"No local model service is available. You can enable browser AI."},{headers});}}
+export async function GET(request:Request){if(!localRequestOrigin(request))return NextResponse.json({available:false,reason:"Enable the free browser model to use AI on this site."},{headers});try{const models=await localModelOptions(),model=selectLocalModel(models);return NextResponse.json({available:Boolean(model),model,models},{headers});}catch{return NextResponse.json({available:false,reason:"No local model service is available. You can enable browser AI."},{headers});}}
 export async function POST(request:Request){
- if(!localModelAllowed(request.url))return NextResponse.json({error:"Server-side local AI is only available on localhost. Use the free browser model here."},{status:503,headers});
- const origin=request.headers.get("origin");if(origin && origin!==new URL(request.url).origin)return NextResponse.json({error:"Cross-origin AI requests are not allowed."},{status:403,headers});
+ if(!localRequestOrigin(request))return NextResponse.json({error:"Server-side local AI is only available on localhost. Use the free browser model here."},{status:503,headers});
+ if(!sameLocalOrigin(request))return NextResponse.json({error:"Cross-origin AI requests are not allowed."},{status:403,headers});
  if(!request.headers.get("content-type")?.startsWith("application/json"))return NextResponse.json({error:"Send a JSON request."},{status:415,headers});
  if(active)return NextResponse.json({error:"The local model is answering another request. Try again in a moment."},{status:429,headers});
  let text="";const reader=request.body?.getReader();if(!reader)return NextResponse.json({error:"Missing message."},{status:400,headers});

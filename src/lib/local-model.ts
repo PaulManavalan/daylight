@@ -2,6 +2,14 @@ import {brainRequestSchema,dialogueSchema,proposalSchema,combineModelStages,mode
 import {modelMessages,isPlanExplanation,needsProgressClarification} from "./model-messages";
 const base="http://127.0.0.1:11434";
 export function localModelAllowed(url:string){const host=new URL(url).hostname;return process.env.VERCEL!=="1" && ["localhost","127.0.0.1","[::1]"].includes(host);}
+// Next's internal URL can use localhost even when the browser opened 127.0.0.1.
+// Validate the actual HTTP authority, never forwarded-host headers or aliases.
+export function localRequestOrigin(request:Request){
+ if(!localModelAllowed(request.url))return null;
+ const host=request.headers.get('host');if(!host)return null;
+ try{const authority=new URL(new URL(request.url).protocol+'//'+host);return authority.host===host.toLowerCase() && localModelAllowed(authority.href)?authority.origin:null;}catch{return null;}
+}
+export function sameLocalOrigin(request:Request){const expected=localRequestOrigin(request),origin=request.headers.get('origin');return Boolean(expected && (!origin || origin===expected));}
 export function selectLocalModel(names:string[],requested?:string){
  const supported=names.filter(n=>/^(?:qwen[23](?:\.\d+)?(?:vl|-vl)?|gemma3|llama3(?:\.\d+)?)(?::|$)/.test(n));
  if(requested){if(!supported.includes(requested))throw new Error('That chat model is not installed or supported. Refresh the local model list and choose an available model.');return requested;}

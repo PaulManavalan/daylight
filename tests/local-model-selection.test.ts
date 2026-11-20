@@ -1,9 +1,20 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {selectLocalModel,askLocalModel} from '../src/lib/local-model';
+import {selectLocalModel,askLocalModel,localRequestOrigin,sameLocalOrigin} from '../src/lib/local-model';
 import {brainContext} from '../src/lib/assistant-brain';
 import {defaults} from '../src/lib/scheduling';
 const installed=['qwen3-vl:8b','qwen2.5vl:7b','gemma3:latest'];
+test('local HTTP authority accepts the launcher origin while rejecting foreign, rebound and forwarded hosts',()=>{
+ const request=(host:string,origin?:string)=>new Request('http://localhost:3103/api/assistant',{headers:{host,...(origin?{origin}:{})}});
+ assert.equal(localRequestOrigin(request('127.0.0.1:3103')),'http://127.0.0.1:3103');
+ assert.equal(sameLocalOrigin(request('127.0.0.1:3103','http://127.0.0.1:3103')),true);
+ assert.equal(sameLocalOrigin(request('127.0.0.1:3103','http://localhost:3103')),false);
+ assert.equal(sameLocalOrigin(request('127.0.0.1:3103','https://example.com')),false);
+ assert.equal(sameLocalOrigin(request('127.0.0.1:3103','null')),false);
+ for(const host of ['example.com:3103','localhost.evil.invalid:3103','user@localhost:3103','localhost:3103/path'])assert.equal(localRequestOrigin(request(host)),null);
+ const forwarded=new Request('http://localhost:3103/api/assistant',{headers:{host:'example.com:3103','x-forwarded-host':'localhost:3103'}});assert.equal(localRequestOrigin(forwarded),null);
+ const previous=process.env.VERCEL;try{process.env.VERCEL='1';assert.equal(localRequestOrigin(request('127.0.0.1:3103')),null);}finally{if(previous===undefined)delete process.env.VERCEL;else process.env.VERCEL=previous;}
+});
 test('local model selection uses installed chat models and rejects uninstalled or URL-like names',()=>{
  assert.equal(selectLocalModel(installed),'gemma3:latest');
  assert.equal(selectLocalModel(installed,'qwen3-vl:8b'),'qwen3-vl:8b');

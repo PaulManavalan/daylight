@@ -21,7 +21,7 @@ export function WorkspaceBackupControl({disabled,onExport}:{disabled:boolean;onE
   if(!review || busy)return;setBusy(true);setError('');
   try{
    restoreWorkspaceBackup(localStorage,review.data,review.snapshot);
-   try{sessionStorage.removeItem('daylight.conversation.v1.local-demo');}catch{}
+   try{sessionStorage.removeItem('daylight.conversation.v1.local-demo');localStorage.removeItem('daylight.chat.v1.local-demo');}catch{}
    window.location.reload();
   }catch(e){setError(e instanceof Error?e.message:'The restore could not finish.');setBusy(false);try{setHasRecovery(localStorage.getItem(RESTORE_PREVIOUS)!==null);}catch{}}
  }

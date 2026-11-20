@@ -7,6 +7,13 @@ export function isExploratoryConversation(request:BrainRequest){
  const action=/\b(?:add|create|schedule|replan|rebalance|move|change|set|remove|delete|finished|completed|spent|worked)\b|\bplan\s+(?:my|the)\s+(?:day|week)\b|\b\d+\s*(?:minutes?|mins?|hours?|hrs?)\b/i.test(text);
  return conversational && !action;
 }
+/** An explicit new assignment must not be redirected into edits of saved work. */
+export function isExplicitNewTask(request:BrainRequest){
+ const text=request.messages.at(-1)?.content ?? '';
+ return /\b(?:add|create|schedule)\s+(?:a\s+)?new\s+(?:task|assignment)\b/i.test(text)
+  && /\b\d+(?:\.\d+)?\s*(?:minutes?|mins?|hours?|hrs?)\b/i.test(text)
+  && !/\b(?:maybe|sometime|unsure|not sure|don't know|do not know)\b/i.test(text);
+}
 /** A vague check-in is a conversation, not permission to guess a task or time. */
 export function needsProgressClarification(request:BrainRequest){
  const latest=request.messages.at(-1)?.content ?? '';
@@ -37,6 +44,7 @@ export function needsProgressClarification(request:BrainRequest){
 export function modelMessages(request:BrainRequest,compact=false,kind?:ModelReply["kind"],routeOnly=false){
  let data:Record<string,unknown>;try{data=JSON.parse(request.context);}catch{throw new Error("The planning context could not be read.");}
  if(routeOnly || (kind && kind!=="none" && kind!=="replan")){delete data.commitments;delete data.sessions;delete data.unplaced;delete data.preferences;if(kind==="capture"){data.savedTaskTitles=Array.isArray(data.tasks)?(data.tasks as {id:string;title:string}[]).map(t=>({id:t.id,title:t.title})):[];delete data.tasks;}}
+ if(routeOnly && Array.isArray(data.tasks))data.tasks=(data.tasks as {id:string;title:string;subject:string}[]).map(t=>({id:t.id,title:t.title,subject:t.subject}));
  const array=(key:string,max:number)=>{if(Array.isArray(data[key]))data[key]=(data[key] as unknown[]).slice(0,max);};
  array("tasks",compact?6:30);array("sessions",compact?6:25);array("commitments",compact?8:25);array("unplaced",compact?4:10);
  const original=JSON.parse(request.context);data.omittedTasks=(Number(original.omittedTasks)||0)+(Array.isArray(original.tasks)?original.tasks.length:0)-(Array.isArray(data.tasks)?data.tasks.length:0);

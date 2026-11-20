@@ -171,3 +171,12 @@ body { font-size:1rem; }
   .daylight-button:not(:disabled):hover, .daylight-button:not(:disabled):active,
   .nav-item:hover svg, .subject-nav:hover .subject-dot { transform: none; }
 }
+.chat-plan-summary { list-style:none; padding:0; margin:18px 0; display:grid; gap:10px; }
+.chat-plan-summary li { display:grid; gap:6px; padding:14px 16px; border:1px solid #a6c88726; border-radius:12px; background:#a6c88708; overflow-wrap:anywhere; }
+.chat-plan-summary strong { font-size:.9375rem; color:#e7eee8; }
+.chat-plan-summary span { font-size:.8125rem; color:#b0c1a5; line-height:1.6; }
+.chat-plan-details { margin:16px 0; }
+.chat-plan-details>summary { cursor:pointer; padding:12px 0; color:#b4d69d; font-size:.8125rem; }
+.chat-plan-details>summary:focus-visible { outline:2px solid var(--primary); outline-offset:4px; }
+.chat-history-controls { display:flex; align-items:center; flex-wrap:wrap; gap:10px; padding:14px 0 0; color:#95a48e; }
+.chat-history-controls small { flex:1; min-width:180px; font-size:.75rem; line-height:1.7; }

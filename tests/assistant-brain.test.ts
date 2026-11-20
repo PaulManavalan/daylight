@@ -1,12 +1,24 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
-import {brainContext,modelDrafts,taskEdits,validateModelReply,checkReviewedEdits,type ModelReply} from "../src/lib/assistant-brain";
-import {modelMessages,isPlanExplanation,isExploratoryConversation,needsProgressClarification} from "../src/lib/model-messages";
+import {brainContext,modelDrafts,taskEdits,validateModelReply,checkReviewedEdits,combineModelStages,type ModelReply} from "../src/lib/assistant-brain";
+import {modelMessages,isPlanExplanation,isExploratoryConversation,isExplicitNewTask,needsProgressClarification} from "../src/lib/model-messages";
 import {localModelAllowed} from "../src/lib/local-model";
 import {defaults} from "../src/lib/scheduling";
 import type {Task} from "../src/lib/types";
 const now=new Date(2026,10,18,15),task:Task={id:"essay-1",title:"English essay",subject:"English",description:"PRIVATE NOTE: do not send",deadline:null,estimated_minutes:60,remaining_minutes:60,priority:"medium",energy_level:"high",status:"not_started",user_id:"local-demo",actual_minutes:0,created_at:now.toISOString(),updated_at:now.toISOString()};
 const empty=():ModelReply=>({reply:"Let's review this.",kind:"none",tasks:[],events:[],edits:[],progress:[]});
+test('an unambiguous combined ISO model date is separated without guessing ambiguous or conflicting values',()=>{
+ const proposal={reply:'Review this task.',tasks:[{title:'Museum essay',subject:'History',minutes:25,priority:'medium',energy:'low',dueDate:'2026-11-21,17:00',dueTime:null}],events:[]};
+ const parsed=combineModelStages({kind:'capture'},proposal);assert.equal(parsed.tasks[0].dueDate,'2026-11-21');assert.equal(parsed.tasks[0].dueTime,'17:00');
+ for(const date of ['11/21/2026','2026-02-30,17:00','2026-11-21,25:00'])assert.throws(()=>combineModelStages({kind:'capture'},{...proposal,tasks:[{...proposal.tasks[0],dueDate:date}]}));
+ assert.throws(()=>combineModelStages({kind:'capture'},{...proposal,tasks:[{...proposal.tasks[0],dueTime:'18:00'}]}));
+});
+test('explicit new assignments with supplied durations cannot be confused with editing saved work',()=>{
+ const request=(content:string)=>({persona:{name:'Sol',tone:'calm' as const},context:brainContext([task],defaults(),[],[],now),messages:[{role:'user' as const,content}]});
+ assert.equal(isExplicitNewTask(request('Please add a new task: outline a museum essay. It will take 25 minutes and is due tomorrow at 5pm.')),true);
+ for(const text of ['Change the English essay to 25 minutes.','Maybe add a new task for 25 minutes.','Add a new task: write an essay.'])assert.equal(isExplicitNewTask(request(text)),false);
+ const context=modelMessages(request('What is next?'),false,undefined,true)[0].content;assert.match(context,/English essay/);assert.doesNotMatch(context,/remaining_minutes/);
+});
 test('exploratory support stays conversational even with saved assignments, while concrete actions remain available',()=>{
  const request=(content:string)=>({persona:{name:'Sol',tone:'calm' as const},context:brainContext([task],defaults(),[],[],now),messages:[{role:'user' as const,content}]});
  for(const text of ['I feel overwhelmed with homework. Can we talk through where to start?','I do not know where to start.','Could you help me think through my priorities?']){

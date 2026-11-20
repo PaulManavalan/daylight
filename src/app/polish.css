@@ -162,6 +162,8 @@ body { font-size:1rem; }
 @keyframes daylight-success { from { background-color: #45603b; } to { background-color: #243421; } }
 @keyframes daylight-think { 0%, 70%, 100% { opacity: .35; translate: 0 0; } 35% { opacity: 1; translate: 0 -3px; } }
 @media (max-width: 640px) {
+  .sidebar>nav[aria-label="Workspace"] { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:4px; overflow:visible; }
+  .sidebar>nav[aria-label="Workspace"] .nav-item { width:100%; min-width:0; min-height:44px; justify-content:center; padding:8px 4px; font-size:.75rem; }
   .nav-item.active::before { left: 28%; right: 28%; top: auto; bottom: 0; width: auto; height: 2px; }
 }
 @media (prefers-reduced-motion: reduce) {

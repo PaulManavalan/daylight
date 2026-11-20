@@ -28,7 +28,7 @@ Also confirmed November 19: **no paid model/API costs for now**; use existing lo
 | Morning/evening check-ins | Task-progress check-ins exist | Adaptable sleep/energy/recovery/priorities/outcomes conversations with durable confirmed records |
 | iPhone | Responsive web styles exist | Confirm web-installable versus native requirement; test the chosen experience on an actual iPhone |
 | Dependencies | Next.js updated to 16.4.6; production audit reports zero known advisories; both production builds pass | Recheck dependencies and deployed build before release |
-| Release quality | 127 unit tests, both builds, browser workflows and bounded live-model checks pass | Complete browser/mobile/accessibility checks, failed-service recovery and deployment verification; publish known limitations accurately |
+| Release quality | 138 unit tests, both builds, browser workflows and bounded live-model checks pass | Complete browser/mobile/accessibility checks, failed-service recovery and deployment verification; publish known limitations accurately |
 
 ## Implementation order
 
@@ -42,7 +42,15 @@ No gate is satisfied by a placeholder, mock transport, test count alone, success
 
 ## Verification checkpoint
 
-The current development pass has **127 passing unit tests**, passing TypeScript, and passing server and static hosted production builds. Next.js was updated to 16.4.6 after a 16.4.3 vulnerability warning; the production dependency audit returned zero known advisories after that update. See the [official security release](https://github.com/vercel/next.js/releases/tag/v16.4.5).
+November 20 reliability pass: Vercel operation is an explicit acceptance requirement alongside localhost. The recorded daylightv50.vercel.app address currently times out from this environment; GitHub reports three successful Vercel project builds and one failed older project build for the preceding commit. These statuses do not verify the active public domain. Vercel account access is needed to identify the canonical domain and inspect the failed deployment. Do not label the hosted release verified from a build status alone.
+
+The full browser matrix passes: task CRUD, assistant intake, model-transport interaction, chat connection recovery, backup, SAT, timetable, visual/reduced-motion checks, twelve adversarial storage/concurrency/GPU/offline cases, local origin checks and a VERCEL=1 API boundary check. Storage corruption or blocked access now opens recovery instead of reseeding or exposing a writable empty workspace. Raw recovery exports only workspace keys. Task edits/deletions check the reviewed snapshot; repeated submissions and invalid DST deadlines are rejected. Cloud CAS tests use mocked HTTP, not a real authenticated account.
+
+Browser AI now remembers an explicit provider choice, exposes loading cancellation, preserves typed messages, retains a working local connection if a browser switch fails, and handles stalled GPU checks/generation and worker crashes. Actual browser-model weight download/inference remains unverified. No model download, paid API, real sign-in email or production account mutation was performed. Both builds and the production dependency audit pass. Vercel uses the same tested webpack production build as CI.
+
+Real installed Gemma tests pass for paragraph capture, saved-task corrections, explanations, short clarifications, hypothetical discussion, ambiguous extra time and the exact request to stop guided intake. An additional live browser test exposed saved assignments copied into a new-task proposal. Capture extraction now omits saved-task names and validation rejects copied or repeated active tasks; the affected live browser flow and proposal regressions pass afterward. Approval creates the requested 25-minute session without a form. This is bounded model evidence, not exhaustive correctness.
+
+The current development pass has **138 passing unit tests**, passing TypeScript, and passing server and static hosted production builds. Next.js was updated to 16.4.6 after a 16.4.3 vulnerability warning; the production dependency audit returned zero known advisories after that update. See the [official security release](https://github.com/vercel/next.js/releases/tag/v16.4.5).
 
 Browser checks passed with isolated synthetic records: task CRUD, filters, calendar planning, protected time, adaptive check-ins, assistant identity and persistence, draft corrections, stale-write protection, cancellation, backup preview/restore/recovery, SAT results/error log/targeted scheduling/export/reload, desktop/mobile width, transitions and reduced motion. AI browser transport is mocked to verify the interface independently of inference. Tests launch their own local servers and never stop another Daylight process.
 

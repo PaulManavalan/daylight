@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import {selectLocalModel,askLocalModel,localRequestOrigin,sameLocalOrigin} from '../src/lib/local-model';
 import {brainContext} from '../src/lib/assistant-brain';
 import {defaults} from '../src/lib/scheduling';
+import {modelPreference,rememberModelPreference} from '../src/lib/model-preference';
+test('model startup restores only a known per-workspace choice and never treats unknown data as download consent',()=>{
+ const values=new Map<string,string>(),storage={getItem:(k:string)=>values.get(k)??null,setItem:(k:string,v:string)=>{values.set(k,v);}};assert.equal(modelPreference(storage,'demo'),null);rememberModelPreference(storage,'demo','browser');assert.equal(modelPreference(storage,'demo'),'browser');assert.equal(modelPreference(storage,'other'),null);values.set('daylight.ai.provider.v1.demo','unexpected');assert.equal(modelPreference(storage,'demo'),null);assert.equal(modelPreference({getItem:()=>{throw new Error('Blocked');}},'demo'),null);
+});
 const installed=['qwen3-vl:8b','qwen2.5vl:7b','gemma3:latest'];
 test('local HTTP authority accepts the launcher origin while rejecting foreign, rebound and forwarded hosts',()=>{
  const request=(host:string,origin?:string)=>new Request('http://localhost:3103/api/assistant',{headers:{host,...(origin?{origin}:{})}});

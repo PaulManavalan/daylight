@@ -11,7 +11,7 @@ import { PlanningStore } from "@/lib/planning-store";
 import { PlanningPreferencesDialog } from "./planning-preferences";
 
 export interface CalendarCommand {id:number;action:"plan_day"|"show_day"|"check_in"|"conversation_plan";taskId?:string}
-type Props = { command?:CalendarCommand|null; onCommandHandled?:(id:number)=>void; visible: boolean; addTask: () => void; openPreferences: () => void; tasks: Task[]; owner: string; preferencesOpen: boolean; closePreferences: () => void; saveTask: (input: TaskInput, id?: string) => Promise<void>; editTask: (task: Task) => void; registerExport: (state: PlanningState) => void };
+type Props = { command?:CalendarCommand|null; onCommandHandled?:(id:number)=>void; visible: boolean; addTask: () => void; openPreferences: () => void; tasks: Task[]; owner: string; preferencesOpen: boolean; closePreferences: () => void; saveTask: (input: TaskInput, id?: string,expected?:Task) => Promise<void>; editTask: (task: Task) => void; registerExport: (state: PlanningState) => void };
 const timeLabel = (d: Date) => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 const localInput = (iso: string) => { const d = new Date(iso); return `${dateKey(d)}T${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; };
 export function PlanningCalendar({ command, onCommandHandled, visible, addTask, openPreferences, tasks, owner, preferencesOpen, closePreferences, saveTask, editTask, registerExport }: Props) {
@@ -141,7 +141,7 @@ export function PlanningCalendar({ command, onCommandHandled, visible, addTask, 
       const before=taskRef.current.find(t=>t.id===proposal.task.id)!;
       store.stage(before,proposal.task,proposal.state.history[0],savedRaw.current);
       observedTasks.current=taskSignature(taskRef.current.map(t=>t.id===proposal.task.id?proposal.task:t));
-      await saveTask(proposal.task,proposal.task.id);
+      await saveTask(proposal.task,proposal.task.id,before);
       const moved=proposal.result.changes.filter(c=>c.kind==="moved").length;
       const removed=proposal.result.changes.filter(c=>c.kind==="removed").length;
       showResult(proposal.state,proposal.result,`${response} saved. ${moved} sessions moved${removed?`, ${removed} displaced`:""}. ${response==="Stuck"?"Start with a small 15-minute restart; later work has been rearranged.":"The rest of your week has been rebalanced around hard deadlines."}`);

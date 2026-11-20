@@ -14,7 +14,7 @@ const temp=path.resolve('artifacts/ai-browser-temp');fs.mkdirSync(temp,{recursiv
  if(mode==='cancel'){await new Promise(resolve=>setTimeout(resolve,2000));}
  try{await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({model:'Browser test model',result})});}catch{}
  });
- await page.goto(preview.url,{waitUntil:'networkidle'});const assistant=page.getByRole('region',{name:'Planning assistant',exact:true});await page.getByText('Real AI · Browser test model',{exact:false}).waitFor();
+ await page.goto(preview.url,{waitUntil:'networkidle'});const assistant=page.getByRole('region',{name:'Planning assistant',exact:true});await assistant.locator('.brain-state').filter({hasText:'Connected'}).waitFor();
  async function say(text){await assistant.getByRole('textbox',{name:'Your reply',exact:true}).fill(text);await assistant.getByRole('button',{name:'Send',exact:true}).click();}
  const count=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('daylight.tasks.v1')).length),getEssay=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('daylight.tasks.v1')).find(t=>t.title==='Brain model essay'));
  const before=await count();await say('I have too much to do and I do not know where to start.');await assistant.getByText('What assignment feels most urgent, and roughly how much time will it need?').waitFor();assert.equal(await assistant.locator('.assistant-review').count(),0);assert.equal(await count(),before);mode='capture';await say('Essay by Friday, soccer after school, and laundry. Help me plan it.');await assistant.getByRole('heading',{name:'Your day, ready to review'}).waitFor();assert.equal(await count(),before,'model output alone saves nothing');

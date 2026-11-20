@@ -7,7 +7,7 @@ test('asking to talk or pause intake exits guided setup without treating the wor
  for(const text of ['Math worksheet 25 minutes','I finished the essay','cancel that update'])assert.equal(wantsOpenChat(text),false);
 });
 test('chat approval belongs to the latest visible proposal and never treats a qualification as consent',()=>{
- for(const text of ['yes','yeah, do that','go ahead','sounds good'])assert.deepEqual(chatDecision(text,['draft'],'draft'),{action:'approve',target:'draft'});
+ for(const text of ['yes','yeah, do that','go ahead','sounds good','yes, that works for me','looks good','go ahead and save it'])assert.deepEqual(chatDecision(text,['draft'],'draft'),{action:'approve',target:'draft'});
  for(const text of ['yes, but make it 30 minutes','maybe yes','what if I say yes?','yes'])assert.equal(chatDecision(text,['draft'],text==='yes'?null:'draft'),null);
  assert.equal(chatDecision('yes',[],null),null);
  assert.deepEqual(chatDecision('save that plan',['draft'],null),{action:'approve',target:'draft'});
@@ -15,6 +15,8 @@ test('chat approval belongs to the latest visible proposal and never treats a qu
  assert.equal(chatDecision('save that plan',['progress'],null),null);
  assert.deepEqual(chatDecision('yes',['draft','progress'],'progress'),{action:'approve',target:'progress'});
  assert.deepEqual(chatDecision('not now',['draft'],'draft'),{action:'decline',target:'draft'});
+ assert.deepEqual(chatDecision('discard that proposal',['draft'],null),{action:'decline',target:'draft'});
+ assert.equal(chatDecision('no',['draft'],null),null);
 });
 function storage(){const map=new Map<string,string>();return {map,getItem:(k:string)=>map.get(k)??null,setItem:(k:string,v:string)=>{map.set(k,v);}};}
 test('bounded chat history survives a new store and day while staying separate by owner',()=>{

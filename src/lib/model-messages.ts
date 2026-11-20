@@ -45,7 +45,7 @@ export function needsProgressClarification(request:BrainRequest){
 }
 export function modelMessages(request:BrainRequest,compact=false,kind?:ModelReply["kind"],routeOnly=false){
  let data:Record<string,unknown>;try{data=JSON.parse(request.context);}catch{throw new Error("The planning context could not be read.");}
- if(routeOnly || (kind && kind!=="none" && kind!=="replan")){delete data.commitments;delete data.sessions;delete data.unplaced;delete data.preferences;if(kind==="capture"){data.savedTaskTitles=Array.isArray(data.tasks)?(data.tasks as {id:string;title:string}[]).map(t=>({id:t.id,title:t.title})):[];delete data.tasks;}}
+ if(routeOnly || (kind && kind!=="none" && kind!=="replan")){delete data.commitments;delete data.sessions;delete data.unplaced;delete data.preferences;if(kind==="capture"){delete data.tasks;delete data.savedTaskTitles;}}
  if(routeOnly && Array.isArray(data.tasks))data.tasks=(data.tasks as {id:string;title:string;subject:string}[]).map(t=>({id:t.id,title:t.title,subject:t.subject}));
  const array=(key:string,max:number)=>{if(Array.isArray(data[key]))data[key]=(data[key] as unknown[]).slice(0,max);};
  array("tasks",compact?6:30);array("sessions",compact?6:25);array("commitments",compact?8:25);array("unplaced",compact?4:10);

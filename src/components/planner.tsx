@@ -17,6 +17,7 @@ import { plan, adaptFromCheckIn, fixedSchema, type Response, type PlanningState 
 import {SatWorkspace} from "./sat-workspace";
 import {SatStore,type SatState} from "@/lib/sat";
 import { WorkspaceBackupControl } from "./workspace-backup";
+import {rawWorkspaceRecovery} from '@/lib/workspace-backup';
 import { AuthDialog } from "./auth-dialog";
 import { cloudRepository, localRepository } from "@/lib/repository";
 import { getSupabase } from "@/lib/supabase";
@@ -45,6 +46,7 @@ export function Planner() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [loadProblem,setLoadProblem]=useState(false);
   const [notice, setNotice] = useState("");
   const [view, setView] = useState<View>("today");
   const [subject, setSubject] = useState("all");
@@ -64,6 +66,7 @@ export function Planner() {
   const [planningExport, setPlanningExport] = useState<PlanningState | null>(null);
   const [now, setNow] = useState<Date | null>(null);
   const epoch = useRef(0);
+  const taskOperation=useRef(false);
   const identity = useRef<string | null>(null);
   const repository = useMemo(() => user ? cloudRepository(user.id) : localRepository(), [user]);
 
@@ -89,8 +92,8 @@ export function Planner() {
   const reload = useCallback(async () => {
     const current = ++epoch.current;
     setLoading(true); setError("");
-    try { const rows = await repository.list(); if (current === epoch.current) setTasks(rows); }
-    catch (e) { if (current === epoch.current) setError(e instanceof Error ? e.message : "Unable to load tasks."); }
+    try { const rows = await repository.list(); if (current === epoch.current) {setTasks(rows);setLoadProblem(false);} }
+    catch (e) { if (current === epoch.current) {setLoadProblem(true);setError(e instanceof Error && e.name==='SecurityError'?'Browser storage is blocked. Allow storage for this site, then retry to open your saved tasks.':e instanceof Error ? e.message : "Unable to load tasks.");} }
     finally { if (current === epoch.current) setLoading(false); }
   }, [repository]);
   useEffect(() => { if (authReady) void reload(); }, [authReady, reload]);
@@ -110,26 +113,28 @@ export function Planner() {
     return sortTasks(filterTasks(base, { search, subject, status, deadline: view === "today" ? "today" : deadline }, now ?? new Date()), sort);
   }, [tasks, view, search, subject, status, deadline, sort, now]);
 
-  async function save(input: TaskInput, id?: string) {
+  async function save(input: TaskInput, id?: string,expected?:Task) {
+    if(loadProblem)throw new Error('Open your saved workspace before making changes.');
     const current = epoch.current;
-    const saved = await repository.save(input, id);
+    const saved = await repository.save(input, id,expected);
     if (current !== epoch.current) throw new Error("The workspace changed while saving. Reload before checking in again.");
     setTasks(rows => id ? rows.map(row => row.id === id ? saved : row) : [saved, ...rows]);
-    setNotice(id ? "Task updated. A little clearer already." : "Task added. One less thing to keep in your head.");
+    setNotice(id ? "Task updated." : "Task added.");
   }
   async function toggleDone(task: Task) {
+    if(taskOperation.current)return;taskOperation.current=true;
     setPending(task.id); setError("");
-    try { await save({ ...task, status: task.status === "done" ? "not_started" : "done", remaining_minutes: task.status === "done" ? task.estimated_minutes : 0 }, task.id); }
+    try { await save({ ...task, status: task.status === "done" ? "not_started" : "done", remaining_minutes: task.status === "done" ? task.estimated_minutes : 0 }, task.id,task); }
     catch (e) { setError(e instanceof Error ? e.message : "Could not update task."); }
-    finally { setPending(null); }
+    finally { taskOperation.current=false;setPending(null); }
   }
   async function remove() {
-    if (!deleting) return;
+    if (!deleting || taskOperation.current) return;taskOperation.current=true;
     const id = deleting.id, current = epoch.current;
     setPending(id); setError("");
-    try { await repository.remove(id); if (current === epoch.current) { setTasks(rows => rows.filter(t => t.id !== id)); setDeleting(null); setNotice("Task deleted."); } }
+    try { await repository.remove(id,deleting); if (current === epoch.current) { setTasks(rows => rows.filter(t => t.id !== id)); setDeleting(null); setNotice("Task deleted."); } }
     catch (e) { setError(e instanceof Error ? e.message : "Could not delete task."); }
-    finally { setPending(null); }
+    finally { taskOperation.current=false;setPending(null); }
   }
   useEffect(()=>{
     if(window.matchMedia("(prefers-reduced-motion: reduce)").matches)return;
@@ -137,6 +142,7 @@ export function Planner() {
     return ()=>animation?.cancel();
   },[view,subject]);
   function navigate(next: View) { setView(next); setSubject("all"); setStatus("all"); setDeadline("all"); setSearch(""); }
+  function downloadRecovery(){try{const data=rawWorkspaceRecovery(localStorage),url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'})),link=document.createElement('a');link.href=url;link.download='daylight-raw-recovery.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch{setError('Browser storage cannot be read. Allow storage for this site, then retry. Existing records have not been cleared.');}}
   function openToday(action:CalendarCommand["action"]="show_day",taskId?:string){navigate("calendar");setCalendarCommand({id:++calendarCommandId.current,action,taskId});}
   async function buildFromConversation(inputs:TaskInput[],fixed:import("@/lib/scheduling").FixedBlock[],edits:ReviewedTaskEdit[]=[]) {
     const current=epoch.current;
@@ -150,7 +156,7 @@ export function Planner() {
     const rows=await repository.list();
     if(current!==epoch.current)throw new Error("Workspace changed. Open the assistant in the current account.");
     checkReviewedEdits(rows,edits);
-    for(const edit of edits){const row=rows.find(t=>t.id===edit.taskId)!;if(sameTaskValues(row,edit.after))continue;const saved=await repository.save(edit.after,edit.taskId);if(current!==epoch.current)throw new Error("Workspace changed while saving. Review the original account before retrying.");rows.splice(rows.findIndex(t=>t.id===saved.id),1,saved);setTasks([...rows]);}
+    for(const edit of edits){const row=rows.find(t=>t.id===edit.taskId)!;if(sameTaskValues(row,edit.after))continue;const saved=await repository.save(edit.after,edit.taskId,row);if(current!==epoch.current)throw new Error("Workspace changed while saving. Review the original account before retrying.");rows.splice(rows.findIndex(t=>t.id===saved.id),1,saved);setTasks([...rows]);}
     for(const input of validated){
       if(rows.some(t=>t.status!=="done" && sameTask(t,input)))continue;
       const saved=await repository.save(input);
@@ -173,7 +179,7 @@ export function Planner() {
     const loaded=store.load(),proposal=adaptFromCheckIn(rows,loaded.state,taskId,response,minutes),before=rows.find(t=>t.id===taskId)!;
     store.stage(before,proposal.task,proposal.state.history[0],loaded.raw);
     try{
-      const saved=await repository.save(proposal.task,taskId);
+      const saved=await repository.save(proposal.task,taskId,before);
       if(current!==epoch.current)throw new Error("The workspace changed. Reload the original workspace to recover your check-in.");
       store.save(proposal.state,loaded.raw);store.finish();setTasks(rows.map(t=>t.id===saved.id?saved:t));setPlanningExport(proposal.state);
       setCalendarCommand({id:++calendarCommandId.current,action:"conversation_plan"});
@@ -182,6 +188,7 @@ export function Planner() {
     }catch(e){throw new Error((e instanceof Error?e.message:"The check-in could not finish.")+" Reload safely before retrying; your saved task update can be recovered without adding time twice.");}
   }
   function exportTasks() {
+    if(loadProblem){setError("Download a recovery file before restoring your unreadable workspace.");return;}
     try {
       const sat=new SatStore(localStorage,user?.id ?? "local-demo").load().state;
       const link=document.createElement("a"),url=URL.createObjectURL(new Blob([JSON.stringify({version:1,exported_at:new Date().toISOString(),tasks,planning:planningExport,sat},null,2)],{type:"application/json"}));
@@ -202,27 +209,28 @@ export function Planner() {
         <button onClick={() => navigate("done")} className={`nav-item ${view === "done" ? "active" : ""}`}><CheckCheck size={18} />Completed</button>
         <button onClick={()=>navigate("sat")} className={`nav-item ${view==="sat"?"active":""}`}><BookOpen size={18}/>SAT practice</button>
       </nav>
-      <div className="mt-8 flex items-center justify-between"><p className="nav-label !mb-3">YOUR SUBJECTS</p><button title="Add a task with a new subject" aria-label="Add a task with a new subject" onClick={() => setEditor({ task: null })} className="mb-3 p-1 text-muted-foreground"><Plus size={14} /></button></div>
+      <div className="mt-8 flex items-center justify-between"><p className="nav-label !mb-3">YOUR SUBJECTS</p><button title="Add a task with a new subject" aria-label="Add a task with a new subject" disabled={loadProblem} onClick={() => setEditor({ task: null })} className="mb-3 p-1 text-muted-foreground"><Plus size={14} /></button></div>
       <nav aria-label="Subjects" className="space-y-0.5">{subjects.map(s => <button key={s} className={`subject-nav ${subject === s ? "selected" : ""}`} onClick={() => { navigate("all"); setSubject(s); }}><span className={`subject-dot dot-${subjectColors[s] ?? "stone"}`} />{s}<span className="ml-auto text-xs text-muted-foreground">{tasks.filter(t => t.subject === s && t.status !== "done").length}</span></button>)}</nav>
       <div className="sidebar-bottom"><div className="quiet-card"><span className="flex items-center gap-2 font-medium text-primary"><Sparkles size={15} /> Room to breathe.</span><p>Your plans should make space for life, too.</p><span className="text-[10px] tracking-wide text-muted-foreground">BUILT FOR YOUR PACE</span></div>
-        <button className="nav-item mt-4" onClick={() => setPreferencesOpen(true)}><Settings2 size={17} />Preferences</button>
+        <button className="nav-item mt-4" disabled={loadProblem} onClick={() => setPreferencesOpen(true)}><Settings2 size={17} />Preferences</button>
         <button className="profile-button" onClick={() => setAuthOpen(true)}><span className="profile-avatar">{user?.email?.[0]?.toUpperCase() ?? "S"}</span><span className="min-w-0 text-left"><span className="block truncate text-xs font-medium">{user?.email ?? "Student workspace"}</span><span className="block text-[10px] text-muted-foreground">{user ? "Private account" : "Local demo · saved on this device"}</span></span><MoreHorizontal size={17} className="ml-auto shrink-0" /></button>
         {user && <button onClick={async () => { const { error } = await getSupabase()!.auth.signOut(); if (error) setError(error.message); }} className="mt-2 flex items-center gap-2 text-xs text-muted-foreground"><LogOut size={13} />Sign out</button>}
       </div>
     </aside>
 
-    <div className="main-shell"><header className="topbar"><div className="flex items-center gap-2 text-xs text-muted-foreground"><span>My workspace</span><ChevronRight size={13} /><span className="text-foreground">{viewNames[view]}</span></div><div className="flex items-center gap-4"><span className="hidden sm:block text-xs text-muted-foreground">{now?.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) ?? "Your workspace"}</span><span className="topbar-divider" />{!user && <WorkspaceBackupControl key="local-backup" disabled={loading || !authReady} onExport={exportTasks}/>}<button className="text-muted-foreground hover:text-primary" aria-label="About Daylight" onClick={() => setInfo("help")}><CircleHelp size={17} /></button></div></header>
+    <div className="main-shell"><header className="topbar"><div className="flex items-center gap-2 text-xs text-muted-foreground"><span>My workspace</span><ChevronRight size={13} /><span className="text-foreground">{viewNames[view]}</span></div><div className="flex items-center gap-4"><span className="hidden sm:block text-xs text-muted-foreground">{now?.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) ?? "Your workspace"}</span><span className="topbar-divider" />{!user && <WorkspaceBackupControl key="local-backup" disabled={loading || !authReady} onExport={exportTasks} readable={!loadProblem}/>}<button className="text-muted-foreground hover:text-primary" aria-label="About Daylight" onClick={() => setInfo("help")}><CircleHelp size={17} /></button></div></header>
     <main ref={contentRef} className="main-content">
-      {view==="today"?<header className="day-hero"><div><span className="section-overline"><span className="live-dot"/> A LITTLE LESS ON YOUR MIND</span><h1>Your day.<br/><em>A little more possible.</em></h1><p>School, practice, the things you care about.<br className="hero-linebreak"/> Let’s make room for all of it.</p></div><span className="hero-date">{now?.toLocaleDateString([],{weekday:"long",month:"long",day:"numeric"})}<small>One day at a time.</small></span></header>:<>      <div className="page-heading"><div><div className="eyebrow"><span className="size-1.5 rounded-full bg-primary" /> LESS MENTAL CLUTTER, MORE DAYLIGHT</div><h1>{viewNames[view]}<span className="heading-dot">.</span></h1><p>{view === "sat" ? `Your ${satContext?.goal ?? 1550} goal, one focused practice session at a time.` : view === "done" ? "Small steps add up. Here’s what you’ve finished." : view === "inbox" ? "A home for everything you haven’t started yet." : "School, side quests, and everything in between. You’ve got this."}</p></div><Button hidden={view==="sat"} onClick={() => setEditor({ task: null })} disabled={loading} className={view==="sat"?"hidden":"add-button"} aria-label="Add task"><Plus size={16} />Add task<span className="key-hint" aria-hidden="true">+</span></Button></div></>}
-      {view==="today" && <nav className="day-mobile-jumps" aria-label="Jump within your day"><button onClick={()=>document.getElementById("day-conversation")?.scrollIntoView({block:"start",behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"})}><Sparkles size={13}/>Conversation</button><button onClick={()=>document.getElementById("day-plan")?.scrollIntoView({block:"start",behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"})}><CalendarDays size={13}/>Today’s plan<ArrowDownUp size={11}/></button></nav>}
-      {view==="sat" && error && <div role="alert" className="error-banner">{error}</div>}
-      {view==="today" && error && <div role="alert" className="error-banner">{error}<button onClick={()=>void reload()}>Retry loading</button></div>}
+      {loadProblem && <section className="workspace-recovery"><h2>Your workspace needs recovery</h2><p role="alert">{error}</p><p>Existing records are kept as they are. You can download a recovery file or restore a saved backup from Backups above.</p><div className="flex flex-wrap gap-3"><Button variant="outline" onClick={()=>void reload()}>Retry loading</Button>{!user && <Button onClick={downloadRecovery}><Download size={15}/>Download recovery file</Button>}</div></section>}
+      {loadProblem?null:view==="today"?<header className="day-hero"><div><span className="section-overline">{now?.toLocaleDateString([],{weekday:"long",month:"long",day:"numeric"})}</span><h1>Today</h1><p>{loading?"Opening your workspace…":incomplete.length?`${dueToday} due today · ${incomplete.length} open ${incomplete.length===1?"task":"tasks"}`:"No open tasks. Add something whenever you need to."}</p></div></header>:<>      <div className="page-heading"><div><div className="eyebrow"><span className="size-1.5 rounded-full bg-primary" /> YOUR WORKSPACE</div><h1>{viewNames[view]}<span className="heading-dot">.</span></h1><p>{view === "sat" ? `Your ${satContext?.goal ?? 1550} goal, one focused practice session at a time.` : view === "done" ? "Your completed tasks." : view === "inbox" ? "Tasks you haven’t started." : "View, edit, and organize your tasks."}</p></div><Button hidden={view==="sat"} onClick={() => setEditor({ task: null })} disabled={loading || loadProblem} className={view==="sat"?"hidden":"add-button"} aria-label="Add task"><Plus size={16} />Add task<span className="key-hint" aria-hidden="true">+</span></Button></div></>}
+      {view==="today" && !loadProblem && <nav className="day-mobile-jumps" aria-label="Jump within your day"><button onClick={()=>document.getElementById("day-conversation")?.scrollIntoView({block:"start",behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"})}><Sparkles size={13}/>Conversation</button><button onClick={()=>document.getElementById("day-plan")?.scrollIntoView({block:"start",behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"})}><CalendarDays size={13}/>Today’s plan<ArrowDownUp size={11}/></button></nav>}
+      {view==="sat" && error && !loadProblem && <div role="alert" className="error-banner">{error}</div>}
+      {view==="today" && error && !loadProblem && <div role="alert" className="error-banner">{error}<button onClick={()=>void reload()}>Retry loading</button></div>}
       {view==="today" && (loading || !authReady) && <div className="day-loading" role="status"><Loader2 className="animate-spin" size={20}/>Opening your day…</div>}
 
-      {authReady && !loading && <div hidden={view!=="today"}><DayWorkspace tasks={tasks} planning={planningExport} now={now} onCalendar={()=>navigate("calendar")} onPlan={()=>buildFromConversation([],[])} onCheck={checkFromHome} onEdit={task=>setEditor({task})}><PlanningAssistant sat={satContext} key={user?.id ?? "local-demo"} owner={user?.id ?? "local-demo"} onProgress={progressFromConversation} onPreferences={()=>setPreferencesOpen(true)} subjects={subjects} tasks={tasks} planning={planningExport} onBuild={buildFromConversation}/></DayWorkspace></div>}
-      <div hidden={view === "calendar" || view==="today" || view==="sat"}><div hidden={view==="done"}><QuickCapture key={user?.id ?? "local-demo"} subjects={subjects} defaultSubject={subject==="all"?"Personal":subject} disabled={loading} onSave={save}/></div><section className="stats-grid" aria-label="Task overview"><div className="stat-card"><div><span className="stat-label">On your plate</span><div className="stat-number">{incomplete.length}<span>tasks</span></div><p>A place for every little thing</p></div><span className="stat-icon green"><ListTodo size={21} /></span></div>
-        <div className="stat-card"><div><span className="stat-label">Due today</span><div className="stat-number">{dueToday}<span>{dueToday === 1 ? "task" : "tasks"}</span></div><p>{dueToday ? "Let’s take it one step at a time" : "A little breathing room today"}</p></div><span className="stat-icon peach"><Sun size={22} /></span></div>
-        <div className="stat-card"><div><span className="stat-label">Time to make progress</span><div className="stat-number time-number">{formatMinutes(incomplete.reduce((sum, t) => sum + t.remaining_minutes, 0))}</div><p>Estimated work remaining</p></div><span className="stat-icon purple"><Clock3 size={21} /></span></div>
+      {authReady && !loading && !loadProblem && <div hidden={view!=="today"}><DayWorkspace tasks={tasks} planning={planningExport} now={now} onCalendar={()=>navigate("calendar")} onPlan={()=>buildFromConversation([],[])} onCheck={checkFromHome} onEdit={task=>setEditor({task})}><PlanningAssistant sat={satContext} key={user?.id ?? "local-demo"} owner={user?.id ?? "local-demo"} onProgress={progressFromConversation} onPreferences={()=>setPreferencesOpen(true)} subjects={subjects} tasks={tasks} planning={planningExport} onBuild={buildFromConversation}/></DayWorkspace></div>}
+      <div hidden={loadProblem || view === "calendar" || view==="today" || view==="sat"}><div hidden={view==="done"}><QuickCapture key={user?.id ?? "local-demo"} subjects={subjects} defaultSubject={subject==="all"?"Personal":subject} disabled={loading || loadProblem} onSave={save}/></div><section className="stats-grid" aria-label="Task overview"><div className="stat-card"><div><span className="stat-label">Open tasks</span><div className="stat-number">{incomplete.length}<span>tasks</span></div><p>Tasks still to finish</p></div><span className="stat-icon green"><ListTodo size={21} /></span></div>
+        <div className="stat-card"><div><span className="stat-label">Due today</span><div className="stat-number">{dueToday}<span>{dueToday === 1 ? "task" : "tasks"}</span></div><p>{dueToday ? "Scheduled deadlines today" : "No deadlines today"}</p></div><span className="stat-icon peach"><Sun size={22} /></span></div>
+        <div className="stat-card"><div><span className="stat-label">Work remaining</span><div className="stat-number time-number">{formatMinutes(incomplete.reduce((sum, t) => sum + t.remaining_minutes, 0))}</div><p>Estimated work remaining</p></div><span className="stat-icon purple"><Clock3 size={21} /></span></div>
       </section>
 
       <section className="gentle-banner"><span className="banner-icon"><Sparkles size={20} strokeWidth={1.6} /></span><div><h2>A plan that works around you.</h2><p>Talk through your subjects, homework, and after-school plans.</p><button className="assistant-entry" onClick={()=>navigate("today")}>Talk through my day →</button></div><span className="foundation-badge"><span className="size-1.5 rounded-full bg-primary" /> YOUR PACE · PROTECTED</span></section>
@@ -235,11 +243,11 @@ export function Planner() {
         </div><label className="search-input"><Search size={15} /><input aria-label="Search tasks" placeholder="Search tasks…" value={search} onChange={e => setSearch(e.target.value)} />{search && <button aria-label="Clear search" onClick={() => setSearch("")}><X size={13} /></button>}</label></div>
         {error && <div role="alert" className="error-banner">{error}<button className="underline ml-3" onClick={() => void reload()}>Retry loading</button></div>}
         <div className="table-scroll"><table><thead><tr><th className="check-column"><span className="sr-only">Complete</span></th><th className="title-column">Task name</th><th>Subject</th><th>Status</th><th>Deadline</th><th>Time left</th><th>Priority</th><th className="actions-column"><span className="sr-only">Actions</span></th></tr></thead><tbody>
-          {loading ? <tr><td colSpan={8} className="empty-state"><Loader2 className="mx-auto mb-3 animate-spin" size={22} />Making a little space…</td></tr> : visible.length === 0 ? <tr><td colSpan={8} className="empty-state"><Inbox className="mx-auto mb-3 text-primary" size={28} /><strong className="block text-foreground mb-1">{tasks.length === 0 ? "A fresh page. A little possibility." : "Nothing here just yet."}</strong>{tasks.length === 0 ? "Add your first task to get started." : "Try another filter, or add something new."}<Button className="mx-auto mt-4 flex" size="sm" onClick={() => setEditor({ task: null })}><Plus size={14} />Add task</Button></td></tr> : visible.map(task => <tr key={task.id} className={task.status === "done" ? "completed-row" : ""}>
+          {loading ? <tr><td colSpan={8} className="empty-state"><Loader2 className="mx-auto mb-3 animate-spin" size={22} />Loading tasks…</td></tr> : visible.length === 0 ? <tr><td colSpan={8} className="empty-state"><Inbox className="mx-auto mb-3 text-primary" size={28} /><strong className="block text-foreground mb-1">{tasks.length === 0 ? "No tasks yet." : "Nothing here just yet."}</strong>{tasks.length === 0 ? "Add your first task to get started." : "Try another filter, or add something new."}<Button className="mx-auto mt-4 flex" size="sm" onClick={() => setEditor({ task: null })}><Plus size={14} />Add task</Button></td></tr> : visible.map(task => <tr key={task.id} className={task.status === "done" ? "completed-row" : ""}>
             <td><button className={`task-checkbox ${task.status === "done" ? "checked" : ""}`} aria-label={task.status === "done" ? `Reopen ${task.title}` : `Complete ${task.title}`} disabled={pending !== null} onClick={() => void toggleDone(task)}>{pending === task.id ? <Loader2 size={12} className="animate-spin" /> : task.status === "done" ? <Check size={12} /> : null}</button></td>
             <td><button className="task-title" onClick={() => setEditor({ task })}>{task.title}</button></td><td><Subject name={task.subject} /></td><td><span className={`status-pill status-${task.status}`}><span className="status-dot" />{statusLabels[task.status]}</span></td>
             <td><span title={task.deadline ? new Date(task.deadline).toLocaleString() : undefined} className={`due-label ${task.deadline && now && Date.parse(task.deadline) < now.getTime() && task.status !== "done" ? "overdue" : ""} ${now && dueLabel(task.deadline, now) === "Today" && task.status !== "done" ? "due-today" : ""}`}><CalendarDays size={12} />{now ? dueLabel(task.deadline, now) : "—"}</span></td>
-            <td><span className="duration"><Clock3 size={12} />{formatMinutes(task.remaining_minutes)}</span></td><td><span className={`priority priority-${task.priority}`}><i /><i /><i /><span>{task.priority[0].toUpperCase() + task.priority.slice(1)}</span></span></td><td><button className="delete-button" aria-label={`Delete ${task.title}`} onClick={() => setDeleting(task)} disabled={pending !== null}><Trash2 size={14} /></button></td>
+            <td><span className="duration"><Clock3 size={12} />{formatMinutes(task.remaining_minutes)}</span></td><td><span className={`priority priority-${task.priority}`}><i /><i /><i /><span>{task.priority[0].toUpperCase() + task.priority.slice(1)}</span></span></td><td><button className="delete-button" aria-label={`Delete ${task.title}`} onClick={() => {setError("");setDeleting(task);}} disabled={pending !== null}><Trash2 size={14} /></button></td>
           </tr>)}
         </tbody></table></div>
         {!loading && <button className="add-row" onClick={() => setEditor({ task: null })}><Plus size={15} />Add a task<span>Get it out of your head</span></button>}
@@ -249,15 +257,15 @@ export function Planner() {
       <div className="bottom-note"><span className="flex items-center gap-2"><CheckCheck size={15} />{completed ? `${completed} ${completed === 1 ? "task" : "tasks"} finished. That’s progress.` : "Progress is a few small steps, taken often."}</span><button onClick={() => setAuthOpen(true)} className="text-primary underline underline-offset-4">{user ? "Account" : "Connect account"}</button></div>
       <section className="next-chapter"><div><span className="chapter-label">MAKE SPACE FOR YOUR DAY</span><h2>Your time, thoughtfully arranged.</h2><p>Make space for school, study, and everything beyond it.</p></div><button onClick={() => navigate("calendar")} className="flex items-center gap-2 text-xs font-medium text-primary">Open calendar<ArrowRight size={15} /></button></section>
       </div>
-      {authReady && !loading && <div hidden={view !== "calendar"}><PlanningCalendar command={calendarCommand} onCommandHandled={id=>setCalendarCommand(current=>current?.id===id?null:current)} addTask={()=>setEditor({task:null})} openPreferences={()=>setPreferencesOpen(true)} visible={view === "calendar"} key={user?.id ?? "local-demo"} owner={user?.id ?? "local-demo"} tasks={tasks} preferencesOpen={preferencesOpen} closePreferences={() => setPreferencesOpen(false)} saveTask={save} editTask={task => setEditor({task})} registerExport={setPlanningExport}/></div>}
-      {authReady && !loading && <div hidden={view!=="sat"}><SatWorkspace key={user?.id ?? "local-demo"} owner={user?.id ?? "local-demo"} onChange={setSatContext} onSchedule={async task=>{await buildFromConversation([task],[]);setNotice("SAT review added to your plan.");}} onExport={exportTasks}/></div>}
-      <button className="mobile-preferences" onClick={() => setPreferencesOpen(true)}>Study preferences</button>
+      {authReady && !loading && !loadProblem && <div hidden={view !== "calendar"}><PlanningCalendar command={calendarCommand} onCommandHandled={id=>setCalendarCommand(current=>current?.id===id?null:current)} addTask={()=>setEditor({task:null})} openPreferences={()=>setPreferencesOpen(true)} visible={view === "calendar"} key={user?.id ?? "local-demo"} owner={user?.id ?? "local-demo"} tasks={tasks} preferencesOpen={preferencesOpen} closePreferences={() => setPreferencesOpen(false)} saveTask={save} editTask={task => setEditor({task})} registerExport={setPlanningExport}/></div>}
+      {authReady && !loading && !loadProblem && <div hidden={view!=="sat"}><SatWorkspace key={user?.id ?? "local-demo"} owner={user?.id ?? "local-demo"} onChange={setSatContext} onSchedule={async task=>{await buildFromConversation([task],[]);setNotice("SAT review added to your plan.");}} onExport={exportTasks}/></div>}
+      <button disabled={loadProblem} className="mobile-preferences" onClick={() => setPreferencesOpen(true)}>Study preferences</button>
     </main></div>
 
     {editor && <TaskEditor key={editor.task?.id ?? "new"} task={editor.task} open onClose={() => setEditor(null)} onSave={save} subjects={subjects} />}
     <AuthDialog open={authOpen} onClose={() => setAuthOpen(false)} />
-    <Dialog open={Boolean(deleting)} onOpenChange={value => { if (!value && !pending) setDeleting(null); }}><DialogContent><DialogTitle className="text-xl font-semibold">Delete this task?</DialogTitle><DialogDescription className="mt-3 text-sm text-muted-foreground">“{deleting?.title}” and its saved task history will be removed. This can’t be undone.</DialogDescription><div className="mt-6 flex justify-end gap-2"><Button variant="ghost" onClick={() => setDeleting(null)} disabled={Boolean(pending)}>Keep task</Button><Button className="bg-red-700 hover:bg-red-800" onClick={() => void remove()} disabled={Boolean(pending)}>{pending ? "Deleting…" : "Delete task"}</Button></div></DialogContent></Dialog>
-    <Dialog open={Boolean(info)} onOpenChange={value => { if (!value) setInfo(null); }}><DialogContent><DialogTitle className="text-xl font-semibold">Welcome to Daylight.</DialogTitle><DialogDescription className="mt-3 text-sm leading-6 text-muted-foreground">Start with the conversation on Your day. Share homework and commitments, review the details, and let Daylight build your day. Return to the assistant when you finish, need more time, or feel stuck. Calendar and All tasks give you direct control when you need it. The planner respects deadlines and tells you when work cannot fit. Task accounts sync through Supabase; calendar data stays in this browser. Export saves both.</DialogDescription><Button className="mt-6" onClick={() => setInfo(null)}>Got it</Button></DialogContent></Dialog>
+    <Dialog open={Boolean(deleting)} onOpenChange={value => { if (!value && !pending) setDeleting(null); }}><DialogContent><DialogTitle className="text-xl font-semibold">Delete this task?</DialogTitle><DialogDescription className="mt-3 text-sm text-muted-foreground">“{deleting?.title}” will be removed from your task list. This can’t be undone.</DialogDescription>{error && <p role="alert" className="form-error mt-4">{error}</p>}<div className="mt-6 flex justify-end gap-2"><Button variant="ghost" onClick={() => setDeleting(null)} disabled={Boolean(pending)}>Keep task</Button><Button className="bg-red-700 hover:bg-red-800" onClick={() => void remove()} disabled={Boolean(pending)}>{pending ? "Deleting…" : "Delete task"}</Button></div></DialogContent></Dialog>
+    <Dialog open={Boolean(info)} onOpenChange={value => { if (!value) setInfo(null); }}><DialogContent><DialogTitle className="text-xl font-semibold">Welcome to Daylight.</DialogTitle><DialogDescription className="mt-3 text-sm leading-6 text-muted-foreground">Start with the conversation on Your day. Share homework and commitments, review the details, and let Daylight build your day. Return to the assistant when you finish, need more time, or feel stuck. Calendar and All tasks give you direct control when you need it. The planner respects deadlines and tells you when work cannot fit. Tasks, plans, and SAT records stay in this browser unless you connect an account for task sync. Workspace exports include tasks, plans, and SAT records; conversations have a separate download.</DialogDescription><Button className="mt-6" onClick={() => setInfo(null)}>Got it</Button></DialogContent></Dialog>
     {notice && <div role="status" className="toast"><Check size={16} />{notice}<button aria-label="Dismiss notification" onClick={() => setNotice("")}><X size={14} /></button></div>}
   </div>;
 }

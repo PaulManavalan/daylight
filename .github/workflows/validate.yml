@@ -36,11 +36,13 @@ jobs:
       - name: Verify domain and recovery behavior
         run: pnpm test
       - name: Build the local-server application
-        run: pnpm exec next build --webpack
+        run: pnpm run build
       - name: Type-check the complete application
         run: pnpm typecheck
       - name: Verify localhost API origin isolation
         run: node tests/local-api.cjs
+      - name: Verify hosted model boundaries
+        run: node tests/hosted-api.cjs
       - name: Build the hosted browser application
         run: pnpm run build:hosted
       - name: Check production dependency advisories

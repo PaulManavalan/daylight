@@ -4,7 +4,7 @@ const {chromium}=require(path.join(process.env.USERPROFILE,'.cache/codex-runtime
 const temp=path.resolve('artifacts/live-chat-browser-temp');fs.mkdirSync(temp,{recursive:true});process.env.TEMP=temp;process.env.TMP=temp;
 (async()=>{let preview,browser,page;try{
  preview=await require('./browser-server.cjs').startBrowserServer();browser=await chromium.launch({channel:'msedge',headless:true});page=await browser.newPage({viewport:{width:1440,height:1080},timezoneId:'America/New_York'});await page.emulateMedia({reducedMotion:'reduce'});
- await page.goto(preview.url,{waitUntil:'networkidle'});const assistant=page.getByRole('region',{name:'Planning assistant',exact:true});await assistant.locator('.brain-state').filter({hasText:'Real AI ·'}).waitFor();
+ await page.goto(preview.url,{waitUntil:'networkidle'});const assistant=page.getByRole('region',{name:'Planning assistant',exact:true});await assistant.locator('.brain-state').filter({hasText:'Connected'}).waitFor();
  const before=await page.evaluate(()=>localStorage.getItem('daylight.tasks.v1'));
  const responsePromise=page.waitForResponse(r=>r.url().endsWith('/api/assistant') && r.request().method()==='POST',{timeout:95000});
  await assistant.getByRole('textbox',{name:'Your reply',exact:true}).fill('I feel overwhelmed with homework. Can we talk through where to start?');await assistant.getByRole('button',{name:'Send',exact:true}).click();

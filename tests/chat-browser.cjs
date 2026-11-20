@@ -12,7 +12,7 @@ const temp=path.resolve('artifacts/chat-browser-temp');fs.mkdirSync(temp,{recurs
   if(mode==='progress')Object.assign(result,{reply:'You finished the essay. Confirm this update?',kind:'progress',progress:[{taskId:task.id,response:'Done',minutes:0}]});
   await route.fulfill({json:{model:'mock-local',result}});
  });
- await page.goto(preview.url,{waitUntil:'networkidle'});let assistant=page.getByRole('region',{name:'Planning assistant',exact:true});await assistant.locator('.brain-state').filter({hasText:'Real AI'}).waitFor();
+ await page.goto(preview.url,{waitUntil:'networkidle'});let assistant=page.getByRole('region',{name:'Planning assistant',exact:true});await assistant.locator('.brain-state').filter({hasText:'Connected'}).waitFor();
  const tasks=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('daylight.tasks.v1')));
  const say=async text=>{await assistant.getByRole('textbox',{name:'Your reply',exact:true}).fill(text);await assistant.getByRole('button',{name:'Send',exact:true}).click();await assistant.getByRole('button',{name:'Send',exact:true}).waitFor({state:'visible'});await page.waitForFunction(()=>!document.querySelector('.brain-thinking') && !document.querySelector('#assistant-answer')?.disabled);};
  const before=(await tasks()).length;await say('hi i have work');await assistant.getByText('What work do you mean?',{exact:true}).waitFor();assert.equal((await tasks()).length,before);
@@ -24,6 +24,7 @@ const temp=path.resolve('artifacts/chat-browser-temp');fs.mkdirSync(temp,{recurs
  const planned=await page.evaluate(id=>JSON.parse(localStorage.getItem('daylight.planning.v1.local-demo')).sessions.filter(s=>s.taskId===id).reduce((n,s)=>n+(Date.parse(s.end)-Date.parse(s.start))/60000,0),saved.id);assert.equal(planned,25);
  mode='progress';await say('I finished the Chat history essay.');assert.notEqual((await tasks()).find(t=>t.id===saved.id).status,'done');await say('yes');assert.equal((await tasks()).find(t=>t.id===saved.id).status,'done');
  mode='draft';await say('Add a new essay for 25 minutes.');const count=(await tasks()).length;mode='clarify';await say('Can you explain what happens?');const clarificationCalls=calls;await say('yes');assert.equal(calls,clarificationCalls+1,'Yes after a question must not approve an older proposal.');assert.equal((await tasks()).length,count);
+ const discardCalls=calls;await say('discard that proposal');assert.equal(calls,discardCalls,'Discarding a visible proposal should not require a model call.');assert.equal(await assistant.locator('.assistant-review').count(),0);assert.equal((await tasks()).length,count);
  await page.screenshot({path:'artifacts/daylight-conversational-chat.png',fullPage:true});
  // A new tab has no session draft, but retains the durable transcript across days.
  const next=await context.newPage();await next.clock.setFixedTime(new Date('2026-11-19T15:00:00-05:00'));await next.goto(preview.url,{waitUntil:'networkidle'});page=next;assistant=page.getByRole('region',{name:'Planning assistant',exact:true});await assistant.getByText('hi i have work',{exact:true}).waitFor();assert.equal(await assistant.locator('.assistant-review').count(),0,'Old proposals are not restored into a new day or tab.');

@@ -8,6 +8,8 @@ export const LOCAL_PLAN='daylight.planning.v1.local-demo';
 export const RESTORE_PENDING='daylight.restore.pending.v1';
 export const RESTORE_PREVIOUS='daylight.restore.previous.v1';
 export const MAX_BACKUP_BYTES=5*1024*1024;
+/** Raw, known workspace keys only; never include account tokens or other storage. */
+export function rawWorkspaceRecovery(storage:Pick<BackupStorage,'getItem'>){return {format:'daylight-raw-recovery',exported_at:new Date().toISOString(),tasks_raw:storage.getItem(LOCAL_TASKS),planning_raw:storage.getItem(LOCAL_PLAN),planning_backup_raw:storage.getItem(LOCAL_PLAN+'.backup'),sat_raw:storage.getItem(satKey('local-demo')),chat_raw:storage.getItem('daylight.chat.v1.local-demo'),restore_pending_raw:storage.getItem(RESTORE_PENDING),restore_previous_raw:storage.getItem(RESTORE_PREVIOUS)};}
 const backupTask=taskInputSchema.safeExtend({id:z.uuid(),user_id:z.string().min(1),actual_minutes:z.number().int().min(0),created_at:z.iso.datetime(),updated_at:z.iso.datetime()});
 const envelope=z.object({version:z.literal(1),exported_at:z.iso.datetime(),tasks:z.array(backupTask).max(10000),planning:planningSchema.nullable(),sat:satStateSchema.nullable().optional()});
 export interface BackupStorage {getItem(key:string):string|null;setItem(key:string,value:string):void;removeItem(key:string):void}

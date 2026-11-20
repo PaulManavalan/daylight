@@ -20,7 +20,7 @@ export function QuickCapture({subjects,defaultSubject,disabled,onSave}:Props){
   finally{operation.current=false;setBusy(false);requestAnimationFrame(()=>input.current?.focus());}
  }
  return <section className="quick-capture" aria-label="Quick task capture"><form onSubmit={e=>{e.preventDefault();void capture();}}>
-  <div className="quick-capture-title"><Plus size={17}/><input ref={input} aria-label="Quick task title" placeholder="Get it out of your head…" value={title} maxLength={200} disabled={disabled || busy} onChange={e=>setTitle(e.target.value)}/></div>
+  <div className="quick-capture-title"><Plus size={17}/><input ref={input} aria-label="Quick task title" placeholder="Add a task…" value={title} maxLength={200} disabled={disabled || busy} onChange={e=>setTitle(e.target.value)}/></div>
   <label className="quick-capture-subject"><span className="sr-only">Quick task subject</span><select aria-label="Quick task subject" disabled={disabled || busy} value={subject} onChange={e=>setSubject(e.target.value)}>{[...new Set([defaultSubject,subject,...subjects])].sort().map(s=><option key={s}>{s}</option>)}</select></label>
   <label className="quick-capture-time"><input aria-label="Quick estimate (minutes)" type="number" min={5} max={1440} required value={estimate} disabled={disabled || busy} onChange={e=>setEstimate(Number(e.target.value))}/><span>min</span></label>
   <Button type="submit" size="sm" disabled={disabled || busy || !title.trim()} aria-label="Capture task">{busy?<Loader2 size={14} className="animate-spin"/>:<Plus size={14}/>}Add</Button>

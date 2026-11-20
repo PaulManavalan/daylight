@@ -19,7 +19,7 @@ const temp=path.resolve('artifacts/assistant-browser-temp');fs.mkdirSync(temp,{r
   await assistant.getByRole('button',{name:/^Straightforward/}).click();
   await assistant.getByRole('button',{name:'moon avatar',exact:true}).click();
   await assistant.getByRole('button',{name:'Save personality',exact:true}).click();
-  await assistant.getByText("Let's plan your day.",{exact:false}).waitFor();
+  await assistant.getByText("What's the situation?",{exact:false}).waitFor();
   assert.ok(await assistant.locator('.assistant-identity .companion-moon').first().isVisible());
   await page.reload({waitUntil:'networkidle'});
   await assistant.locator('.assistant-identity strong').filter({hasText:'Orbit'}).waitFor();

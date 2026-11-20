@@ -46,3 +46,19 @@ test("local repository persists create/edit/complete/delete without reseeding an
   assert.deepEqual(await repo.list(), []);
   await assert.rejects(() => repo.save(input, created.id), /deleted/);
 });
+test('task snapshots reject stale saves and deletes without replacing newer progress',async()=>{
+ const memory=new Map<string,string>();Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:(k:string)=>memory.get(k)??null,setItem:(k:string,v:string)=>memory.set(k,v)}});
+ const repo=localRepository(),original=await repo.save(input),fresh=await repo.save({...input,remaining_minutes:11},original.id,original);
+ await assert.rejects(()=>repo.save({...input,title:'Stale title'},original.id,original),/changed/);await assert.rejects(()=>repo.remove(original.id,original),/changed/);
+ const after=(await repo.list()).find(t=>t.id===original.id)!;assert.equal(after.remaining_minutes,11);assert.equal(after.title,input.title);
+ await repo.remove(fresh.id,fresh);await assert.rejects(()=>repo.remove(fresh.id,fresh),/changed/);
+});
+test('empty, malformed and duplicate stored tasks are preserved instead of reseeded',async()=>{
+ const memory=new Map<string,string>();Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:(k:string)=>memory.get(k)??null,setItem:(k:string,v:string)=>memory.set(k,v)}});const repo=localRepository();
+ for(const raw of ['', 'broken JSON','{}']){memory.set('daylight.tasks.v1',raw);await assert.rejects(()=>repo.list(),/saved tasks/);assert.equal(memory.get('daylight.tasks.v1'),raw);}
+ memory.delete('daylight.tasks.v1');const task=(await repo.list())[0],raw=JSON.stringify([task,task]);memory.set('daylight.tasks.v1',raw);await assert.rejects(()=>repo.list(),/saved tasks/);assert.equal(memory.get('daylight.tasks.v1'),raw);
+});
+test('task writes fail cleanly when browser storage is full',async()=>{
+ const memory=new Map<string,string>();let full=false;Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:(k:string)=>memory.get(k)??null,setItem:(k:string,v:string)=>{if(full)throw new Error('Quota');memory.set(k,v);}}});const repo=localRepository();await repo.list();const before=memory.get('daylight.tasks.v1');full=true;
+ await assert.rejects(()=>repo.save(input),/previous saved data is unchanged/);assert.equal(memory.get('daylight.tasks.v1'),before);
+});

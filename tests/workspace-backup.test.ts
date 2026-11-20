@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import {defaults} from '../src/lib/scheduling';
 import {PlanningStore} from '../src/lib/planning-store';
 import {localRepository} from '../src/lib/repository';
-import {LOCAL_TASKS,LOCAL_PLAN,RESTORE_PENDING,RESTORE_PREVIOUS,parseWorkspaceBackup,captureRestoreSnapshot,restoreWorkspaceBackup,recoverLocalRestore,previousWorkspaceExport} from '../src/lib/workspace-backup';
+import {LOCAL_TASKS,LOCAL_PLAN,RESTORE_PENDING,RESTORE_PREVIOUS,parseWorkspaceBackup,captureRestoreSnapshot,restoreWorkspaceBackup,recoverLocalRestore,previousWorkspaceExport,rawWorkspaceRecovery} from '../src/lib/workspace-backup';
+test('raw recovery preserves damaged workspace keys without exporting auth or unrelated storage',()=>{
+ const values=new Map([[LOCAL_TASKS,''],[LOCAL_PLAN,'damaged'],['sb-auth-token','secret-token'],['unrelated-app','private-value']]);const data=rawWorkspaceRecovery({getItem:key=>values.get(key)??null});assert.equal(data.tasks_raw,'');assert.equal(data.planning_raw,'damaged');assert.doesNotMatch(JSON.stringify(data),/secret-token|private-value|sb-auth-token/);
+});
 class Memory {
  values=new Map<string,string>();fail='';
  getItem(key:string){return this.values.get(key) ?? null;}

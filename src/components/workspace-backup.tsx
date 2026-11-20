@@ -4,7 +4,7 @@ import {Upload,Download} from 'lucide-react';
 import {Button} from './ui/button';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from './ui/dialog';
 import {parseWorkspaceBackup,captureRestoreSnapshot,restoreWorkspaceBackup,previousWorkspaceExport,MAX_BACKUP_BYTES,RESTORE_PREVIOUS,type WorkspaceBackup,type RestoreSnapshot} from '@/lib/workspace-backup';
-export function WorkspaceBackupControl({disabled,onExport}:{disabled:boolean;onExport:()=>void}){
+export function WorkspaceBackupControl({disabled,onExport,readable=true}:{disabled:boolean;onExport:()=>void;readable?:boolean}){
  const file=useRef<HTMLInputElement>(null);
  const menu=useRef<HTMLDetailsElement>(null),[hasRecovery,setHasRecovery]=useState(false);
  useEffect(()=>{try{setHasRecovery(localStorage.getItem(RESTORE_PREVIOUS)!==null);}catch{}},[]);
@@ -35,7 +35,7 @@ export function WorkspaceBackupControl({disabled,onExport}:{disabled:boolean;onE
  }
  return <>
   <input ref={file} hidden type="file" accept=".json,application/json" aria-label="Choose Daylight backup" onChange={e=>void selectFile(e.target.files?.[0])}/>
-  <details ref={menu} className="backup-options"><summary><Upload size={16}/><span className="hidden sm:inline">Backups</span><span className="sr-only sm:hidden">Backups</span></summary><div><Button variant="ghost" size="sm" disabled={disabled} onClick={onExport}><Download size={14}/>Export workspace</Button><Button variant="ghost" size="sm" disabled={disabled} onClick={()=>file.current?.click()}>Restore a backup file</Button><Button variant="ghost" size="sm" disabled={disabled || !hasRecovery} onClick={recoveryCopy}><Download size={14}/>Download previous workspace</Button></div></details>
+  <details ref={menu} className="backup-options"><summary><Upload size={16}/><span className="hidden sm:inline">Backups</span><span className="sr-only sm:hidden">Backups</span></summary><div><Button variant="ghost" size="sm" disabled={disabled || !readable} onClick={onExport}><Download size={14}/>Export workspace</Button><Button variant="ghost" size="sm" disabled={disabled} onClick={()=>file.current?.click()}>Restore a backup file</Button><Button variant="ghost" size="sm" disabled={disabled || !hasRecovery} onClick={recoveryCopy}><Download size={14}/>Download previous workspace</Button></div></details>
   {!review && error && <p role="alert" className="backup-inline-error">{error}</p>}
   <Dialog open={Boolean(review)} onOpenChange={open=>{if(!open && !busy){setReview(null);setError('');}}}>
    <DialogContent><DialogTitle className="text-xl">Restore your local workspace</DialogTitle>

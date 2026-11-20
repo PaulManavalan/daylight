@@ -7,6 +7,16 @@ import {defaults} from "../src/lib/scheduling";
 import type {Task} from "../src/lib/types";
 const now=new Date(2026,10,18,15),task:Task={id:"essay-1",title:"English essay",subject:"English",description:"PRIVATE NOTE: do not send",deadline:null,estimated_minutes:60,remaining_minutes:60,priority:"medium",energy_level:"high",status:"not_started",user_id:"local-demo",actual_minutes:0,created_at:now.toISOString(),updated_at:now.toISOString()};
 const empty=():ModelReply=>({reply:"Let's review this.",kind:"none",tasks:[],events:[],edits:[],progress:[]});
+test('new-task extraction excludes saved assignments and rejects copied or repeated tasks',()=>{
+ const request={persona:{name:'Sol',tone:'calm' as const},context:brainContext([task],defaults(),[],[],now),messages:[{role:'user' as const,content:'Add a new task: museum outline, 25 minutes.'}]};
+ const data=JSON.parse(modelMessages(request,false,'capture')[0].content.split('Current planning DATA (may be truncated; do not invent omitted items):\n')[1]);
+ assert.equal(data.tasks,undefined);assert.equal(data.savedTaskTitles,undefined);
+ const draft={title:' English   ESSAY ',subject:'English',minutes:25,priority:'medium' as const,energy:null,dueDate:null,dueTime:null};
+ assert.throws(()=>validateModelReply({...empty(),kind:'capture',tasks:[draft]},[task]),/already saved/);
+ const unique={...draft,title:'Museum outline'};
+ assert.throws(()=>validateModelReply({...empty(),kind:'capture',tasks:[unique,unique]},[task]),/repeats/);
+ assert.equal(validateModelReply({...empty(),kind:'capture',tasks:[unique]},[task]).tasks.length,1);
+});
 test('an unambiguous combined ISO model date is separated without guessing ambiguous or conflicting values',()=>{
  const proposal={reply:'Review this task.',tasks:[{title:'Museum essay',subject:'History',minutes:25,priority:'medium',energy:'low',dueDate:'2026-11-21,17:00',dueTime:null}],events:[]};
  const parsed=combineModelStages({kind:'capture'},proposal);assert.equal(parsed.tasks[0].dueDate,'2026-11-21');assert.equal(parsed.tasks[0].dueTime,'17:00');

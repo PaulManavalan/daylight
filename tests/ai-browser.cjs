@@ -2,8 +2,7 @@ const {chromium}=require(require('node:path').join(process.env.USERPROFILE,'.cac
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const temp=path.resolve('artifacts/ai-browser-temp');fs.mkdirSync(temp,{recursive:true});process.env.TEMP=temp;process.env.TMP=temp;
 (async()=>{let server,browser,page;try{
- server=require('node:child_process').spawn(process.execPath,['node_modules/next/dist/bin/next','start','--hostname','127.0.0.1','--port','3103'],{stdio:['ignore','pipe','pipe'],windowsHide:true});
- await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Server timed out')),20000);server.stdout.on('data',d=>{if(String(d).includes('Ready')){clearTimeout(timer);resolve();}});server.on('error',reject);});
+ const preview=await require('./browser-server.cjs').startBrowserServer();server=preview.process;
  browser=await chromium.launch({channel:'msedge',headless:true});page=await browser.newPage({viewport:{width:1440,height:1080},timezoneId:'America/New_York'});await page.emulateMedia({reducedMotion:'reduce'});await page.clock.setFixedTime(new Date('2026-11-18T15:00:00-05:00'));
  const empty=()=>({reply:'Here is a proposal to review.',kind:'none',tasks:[],events:[],progress:[],edits:[]});let mode='clarify';const contexts=[];
  await page.route('**/api/assistant',async route=>{if(route.request().method()==='GET'){await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({available:true,model:'Browser test model'})});return;}const request=route.request().postDataJSON(),context=JSON.parse(request.context);contexts.push(context);const essay=context.tasks.find(t=>t.title==='Brain model essay');let result=empty();
@@ -15,7 +14,7 @@ const temp=path.resolve('artifacts/ai-browser-temp');fs.mkdirSync(temp,{recursiv
  if(mode==='cancel'){await new Promise(resolve=>setTimeout(resolve,2000));}
  try{await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({model:'Browser test model',result})});}catch{}
  });
- await page.goto('http://127.0.0.1:3103',{waitUntil:'networkidle'});const assistant=page.getByRole('region',{name:'Planning assistant',exact:true});await page.getByText('Real AI · Browser test model',{exact:false}).waitFor();
+ await page.goto(preview.url,{waitUntil:'networkidle'});const assistant=page.getByRole('region',{name:'Planning assistant',exact:true});await page.getByText('Real AI · Browser test model',{exact:false}).waitFor();
  async function say(text){await assistant.getByRole('textbox',{name:'Your reply',exact:true}).fill(text);await assistant.getByRole('button',{name:'Send',exact:true}).click();}
  const count=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('daylight.tasks.v1')).length),getEssay=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('daylight.tasks.v1')).find(t=>t.title==='Brain model essay'));
  const before=await count();await say('I have too much to do and I do not know where to start.');await assistant.getByText('What assignment feels most urgent, and roughly how much time will it need?').waitFor();assert.equal(await assistant.locator('.assistant-review').count(),0);assert.equal(await count(),before);mode='capture';await say('Essay by Friday, soccer after school, and laundry. Help me plan it.');await assistant.getByRole('heading',{name:'Your day, ready to review'}).waitFor();assert.equal(await count(),before,'model output alone saves nothing');

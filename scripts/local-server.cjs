@@ -29,11 +29,13 @@ async function inspectPort(port) {
 }
 
 async function chooseLocalServer(inspect = inspectPort, first = 3102, last = 3112) {
+  let freePort;
   for (let port = first; port <= last; port++) {
     const state = await inspect(port);
     if (state === 'daylight') return {port, reuse:true};
-    if (state === 'free') return {port, reuse:false};
+    if (state === 'free' && freePort === undefined) freePort = port;
   }
+  if (freePort !== undefined) return {port:freePort, reuse:false};
   throw new Error(`Ports ${first}–${last} are busy. Close an old Daylight server window, then try again.`);
 }
 

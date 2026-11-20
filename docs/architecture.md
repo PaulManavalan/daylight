@@ -8,7 +8,7 @@ Tasks use the existing repository interface: browser-local demo records or Supab
 
 A planning snapshot contains preferences, recurring protected-time definitions, study sessions, set-aside task IDs, the last 50 check-ins, a rolling 14-day work-credit record, and the latest plan report. UTC ISO strings store concrete times; work windows and recurrence use the browser's local calendar/timezone, including DST. Account timezone editing and cross-device planning sync are not implemented.
 
-`PlanningStore` validates snapshots with Zod, retains a last-known-valid backup, and compares the current raw snapshot before saving to reject stale writes. Invalid primary data can recover from a valid backup with a notice. If both are unreadable, data stays intact and the UI offers a raw recovery download. Exports include tasks and planning; importing exported files is not implemented.
+`PlanningStore` validates snapshots with Zod, retains a last-known-valid backup, and compares the current raw snapshot before saving to reject stale writes. Invalid primary data can recover from a valid backup with a notice. If both are unreadable, data stays intact and the UI offers a raw recovery download. Exports include tasks and planning. Local mode now supports reviewed version-1 export restores with ownership normalization, stale-preview checks, a previous-workspace recovery copy and an interrupted-restore journal. Repository/calendar startup reads recover that journal first. Signed-in account imports remain unsupported.
 
 ## Explainable local planner
 
@@ -43,7 +43,7 @@ Day/week views share the same state. Fixed commitments are striped; flexible stu
 
 The test suite exercises scheduling, adaptive changes, lock conflicts, deterministic output, old snapshot migration, storage failures, and task CRUD. The headless browser regression covers native dragging, invalid drops, preferences, completion, export, skip/resume, an interrupted save, offline local planning, and mobile layouts.
 
-The existing Supabase planning tables remain future cloud-sync infrastructure; this client does not write schedules to those tables. Google Calendar sync, background notifications, import, and full offline page installation/caching are outside this release. Local planning works without network access once the app is loaded. No paid-provider API route remains.
+The existing Supabase planning tables remain future cloud-sync infrastructure; this client does not write schedules to those tables. Google Calendar sync, background notifications, signed-in account import, and full offline page installation/caching are outside the current implementation. Local planning works without network access once the app is loaded. No paid-provider API route remains.
 
 
 The home assistant supports either a mixed day brief or guided subject/event/outside-work intake. It reviews drafts before writing and remains on the home workspace after planning. Explicit progress phrases produce task choices before mutation; the parent applies the same check-in proposal and staged journal as the calendar. Home intake reloads task rows and reuses matching incomplete title/subject pairs on retries. A saved snapshot is then propagated to the hidden calendar through a one-shot refresh command. Per-workspace conversation state lives in tab-scoped sessionStorage for the current local date; it is best-effort draft persistence, separate from task and plan storage. Dark theme tokens and responsive home styles preserve keyboard focus and reduced-motion behavior.
@@ -51,9 +51,9 @@ The home assistant supports either a mixed day brief or guided subject/event/out
 
 Assistant identity is a separate, Zod-validated per-workspace localStorage record (name, tone, avatar), with a default on missing/corrupt data. New assistant messages pass through a pure voice formatter; persisted historical text is restored verbatim, and planner outputs remain untouched. Personality settings save before updating the visible identity. Code-native SVG avatars respect reduced-motion preferences and are decorative to assistive technology.
 
-## Long-term product vision — context, not approved implementation
+## Long-term product vision — evolving source context
 
-Source: the user's “Daylight — Long-Term Product Vision and Development Context,” supplied November 18, 2026. This is an evolving direction, not a finalized specification or permission to expand the current development task. Preserve the existing application and requirements. Wait for explicit authorization before implementing these future capabilities; the order below is not an implementation priority.
+Source: the user's “Daylight — Long-Term Product Vision and Development Context,” supplied November 18, 2026. Implementation authorization was subsequently expanded on November 19; current launch scope and confirmed constraints are recorded in `launch-readiness.md`. The following preserves the original context and requirements. This is an evolving direction, not a finalized specification or permission to expand the current development task. Preserve the existing application and requirements. Wait for explicit authorization before implementing these future capabilities; the order below is not an implementation priority.
 
 Daylight should eventually become one central, conversational, proactive and adaptive personal life dashboard. It should understand goals, commitments, preferences and routines through ongoing conversations and authorized integrations, then help create realistic daily and weekly plans. External services may supply data or specialized capabilities, while Daylight unifies the experience. The long-term targets are a responsive web application and an eventual iPhone experience, without assuming the existing web architecture needs replacement.
 

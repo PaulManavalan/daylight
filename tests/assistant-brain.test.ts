@@ -1,7 +1,7 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
 import {brainContext,modelDrafts,taskEdits,validateModelReply,checkReviewedEdits,type ModelReply} from "../src/lib/assistant-brain";
-import {modelMessages,isPlanExplanation} from "../src/lib/model-messages";
+import {modelMessages,isPlanExplanation,needsProgressClarification} from "../src/lib/model-messages";
 import {localModelAllowed} from "../src/lib/local-model";
 import {defaults} from "../src/lib/scheduling";
 import type {Task} from "../src/lib/types";
@@ -32,10 +32,30 @@ test("short clarification answers retain the original task and assistant questio
  assert.deepEqual(messages.slice(1),request.messages);
  assert.ok(messages[0].content.includes("conversation"));
 });
+test("a single resolved task grounds a short deadline answer even when the model guessed a wrong day",()=>{
+ const response={...empty(),kind:'capture' as const,tasks:[{title:'History essay',subject:'History',minutes:45,priority:'medium' as const,energy:null,dueDate:'2026-11-19',dueTime:'17:00'}]};
+ const draft=modelDrafts(response,'About 45 minutes. Friday at 5pm.',now);
+ assert.equal(new Date(draft.tasks[0].deadline!).getDate(),20);
+ assert.equal(new Date(draft.tasks[0].deadline!).getHours(),17);
+});
+test("hypothetical schedule questions remain read-only and negated ISO dates do not override drafts",()=>{
+ const request={persona:{name:'Sol',tone:'calm' as const},context:brainContext([task],defaults(),[],[],now),messages:[{role:'user' as const,content:'What if I skip the English essay today?'}]};
+ assert.equal(isPlanExplanation(request),true);
+ const response={...empty(),kind:'capture' as const,events:[{title:'Soccer',date:'2026-11-20',start:'16:00',end:'18:00'}]};
+ assert.equal(modelDrafts(response,'Soccer is not due 2026-11-19.',now).events[0].date,'2026-11-20');
+});
 
 test("explanations retain actual sessions, commitments and preferences in the model context",()=>{
  const state=defaults();state.fixed.push({id:"soccer",title:"Soccer practice",date:"2026-11-18",start:"16:00",end:"18:00",days:[],recovery_minutes:30});state.sessions=[{id:"essay-session",taskId:task.id,start:new Date(2026,10,18,18,30).toISOString(),end:new Date(2026,10,18,19,15).toISOString(),reason:"After soccer recovery"}];
  const request={persona:{name:"Sol",tone:"calm" as const},context:brainContext([task],state,[],[],now),messages:[{role:"user" as const,content:"Why is my essay after soccer?"}]};
  const prompt=modelMessages(request,false,"none")[0].content;
  assert.ok(prompt.includes("Soccer practice"));assert.ok(prompt.includes("After soccer recovery"));assert.ok(prompt.includes('"preferences"'));
+});
+
+test("vague progress needs a target and a supplied duration while natural duration words are accepted",()=>{
+ const request={persona:{name:'Sol',tone:'calm' as const},context:brainContext([task,{...task,id:'math-two',title:'Math worksheet',subject:'Math'}],defaults(),[],[],now),messages:[{role:'user' as const,content:'I need more time.'}]};
+ assert.equal(needsProgressClarification(request),true);
+ assert.equal(needsProgressClarification({...request,messages:[{role:'user',content:'I need more time on my English essay.'}]}),true);
+ assert.equal(needsProgressClarification({...request,messages:[{role:'user',content:'I need half an hour more time on my English essay.'}]}),false);
+ assert.equal(needsProgressClarification({...request,messages:[{role:'user',content:'I finished my English essay.'}]}),false);
 });

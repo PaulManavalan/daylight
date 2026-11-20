@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { archiveCheckInSessions, defaults, plan, retainWorkRecords, planningSchema, type PlanningState, type ProgressCheck } from "./scheduling";
 import type { Task } from "./types";
+import {recoverLocalRestore} from './workspace-backup';
 
 export interface PlanningStorage {
   getItem(key:string):string|null;
@@ -23,6 +24,7 @@ export class PlanningStore {
   readonly key:string;
   constructor(private storage:PlanningStorage,owner:string){this.key=planningKey(owner);}
   load():{state:PlanningState;raw:string|null;notice:string} {
+    if(this.key===planningKey('local-demo'))recoverLocalRestore(this.storage);
     const raw=this.storage.getItem(this.key),state=parse(raw);
     if(state)return {state,raw,notice:""};
     const backupRaw=this.storage.getItem(`${this.key}.backup`),backup=parse(backupRaw);

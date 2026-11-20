@@ -4,14 +4,13 @@ const temp=path.resolve('artifacts/assistant-browser-temp');fs.mkdirSync(temp,{r
 (async()=>{
  let server,browser,page;
  try{
-  server=require('node:child_process').spawn(process.execPath,['node_modules/next/dist/bin/next','start','--hostname','127.0.0.1','--port','3101'],{stdio:['ignore','pipe','pipe'],windowsHide:true});
-  await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Server timed out')),20000);server.stdout.on('data',d=>{if(String(d).includes('Ready')){clearTimeout(timer);resolve();}});server.on('error',reject);});
+  const preview=await require('./browser-server.cjs').startBrowserServer();server=preview.process;
   browser=await chromium.launch({channel:'msedge',headless:true});
   page=await browser.newPage({viewport:{width:1440,height:1080},timezoneId:'America/New_York'});const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.emulateMedia({reducedMotion:'reduce'});
   await page.clock.setFixedTime(new Date('2026-11-16T14:00:00-05:00'));
     await page.route('**/api/assistant',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({available:false})}));
-  await page.goto('http://127.0.0.1:3101',{waitUntil:'networkidle'});
+  await page.goto(preview.url,{waitUntil:'networkidle'});
   await page.getByRole('region',{name:'Planning assistant',exact:true}).waitFor();
   const assistant=page.getByRole('region',{name:'Planning assistant',exact:true});
   await page.screenshot({path:'artifacts/daylight-dark-home-initial.png',fullPage:true});

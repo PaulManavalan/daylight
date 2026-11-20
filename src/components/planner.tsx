@@ -14,14 +14,17 @@ import { taskInputSchema } from "@/lib/types";
 import { DayWorkspace } from "./day-workspace";
 import { PlanningCalendar, type CalendarCommand } from "./planning-calendar";
 import { plan, adaptFromCheckIn, fixedSchema, type Response, type PlanningState } from "@/lib/scheduling";
+import {SatWorkspace} from "./sat-workspace";
+import {SatStore,type SatState} from "@/lib/sat";
+import { WorkspaceBackupControl } from "./workspace-backup";
 import { AuthDialog } from "./auth-dialog";
 import { cloudRepository, localRepository } from "@/lib/repository";
 import { getSupabase } from "@/lib/supabase";
 import { filterTasks, formatMinutes, sortTasks, type DeadlineFilter } from "@/lib/tasks";
 import { statusLabels, statuses, type Task, type TaskInput, type TaskStatus } from "@/lib/types";
 
-type View = "all" | "today" | "inbox" | "done" | "calendar";
-const viewNames: Record<View, string> = { all: "All tasks", today: "Your day", inbox: "Inbox", done: "Completed", calendar: "Calendar" };
+type View = "all" | "today" | "inbox" | "done" | "calendar" | "sat";
+const viewNames: Record<View, string> = { all: "All tasks", today: "Your day", inbox: "Inbox", done: "Completed", calendar: "Calendar", sat:"SAT practice" };
 const subjectColors: Record<string, string> = { History: "peach", Math: "blue", Robotics: "purple", English: "yellow", Biology: "green", Personal: "stone" };
 function Subject({ name }: { name: string }) { return <span className={`subject subject-${subjectColors[name] ?? "stone"}`}><span className="size-1.5 rounded-full bg-current opacity-60" />{name}</span>; }
 function dueLabel(deadline: string | null, now: Date) {
@@ -57,6 +60,7 @@ export function Planner() {
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const calendarCommandId=useRef(0);
   const [calendarCommand,setCalendarCommand]=useState<CalendarCommand|null>(null);
+  const [satContext,setSatContext]=useState<SatState|null>(null);
   const [planningExport, setPlanningExport] = useState<PlanningState | null>(null);
   const [now, setNow] = useState<Date | null>(null);
   const epoch = useRef(0);
@@ -73,7 +77,7 @@ export function Planner() {
       if (alive) {
         const nextId = session?.user.id ?? null;
         if (identity.current !== nextId) {
-          identity.current = nextId; epoch.current++; setTasks([]); setCalendarCommand(null); setPlanningExport(null); setPreferencesOpen(false); setEditor(null); setDeleting(null); setNotice("");
+          identity.current = nextId; epoch.current++; setTasks([]); setCalendarCommand(null); setPlanningExport(null);setSatContext(null); setPreferencesOpen(false); setEditor(null); setDeleting(null); setNotice("");
           setUser(session?.user ?? null);
         }
         setAuthReady(true); if (session) setAuthOpen(false);
@@ -178,9 +182,11 @@ export function Planner() {
     }catch(e){throw new Error((e instanceof Error?e.message:"The check-in could not finish.")+" Reload safely before retrying; your saved task update can be recovered without adding time twice.");}
   }
   function exportTasks() {
-    const link = document.createElement("a");
-    const url = URL.createObjectURL(new Blob([JSON.stringify({ version: 1, exported_at: new Date().toISOString(), tasks, planning: planningExport }, null, 2)], { type: "application/json" }));
-    link.href = url; link.download = "daylight-tasks.json"; link.click(); URL.revokeObjectURL(url);
+    try {
+      const sat=new SatStore(localStorage,user?.id ?? "local-demo").load().state;
+      const link=document.createElement("a"),url=URL.createObjectURL(new Blob([JSON.stringify({version:1,exported_at:new Date().toISOString(),tasks,planning:planningExport,sat},null,2)],{type:"application/json"}));
+      link.href=url;link.download="daylight-tasks.json";link.click();URL.revokeObjectURL(url);
+    } catch(e) {setError(e instanceof Error?e.message:"The workspace backup could not be exported.");}
   }
 
   return <div className={`app-shell ${view==="today"?"is-home":""}`}>
@@ -194,6 +200,7 @@ export function Planner() {
         <button onClick={() => navigate("all")} className={`nav-item ${view === "all" ? "active" : ""}`}><LayoutGrid size={18} />All tasks</button>
         <button onClick={() => navigate("calendar")} className={`nav-item ${view === "calendar" ? "active" : ""}`}><CalendarDays size={18} />Calendar</button>
         <button onClick={() => navigate("done")} className={`nav-item ${view === "done" ? "active" : ""}`}><CheckCheck size={18} />Completed</button>
+        <button onClick={()=>navigate("sat")} className={`nav-item ${view==="sat"?"active":""}`}><BookOpen size={18}/>SAT practice</button>
       </nav>
       <div className="mt-8 flex items-center justify-between"><p className="nav-label !mb-3">YOUR SUBJECTS</p><button title="Add a task with a new subject" aria-label="Add a task with a new subject" onClick={() => setEditor({ task: null })} className="mb-3 p-1 text-muted-foreground"><Plus size={14} /></button></div>
       <nav aria-label="Subjects" className="space-y-0.5">{subjects.map(s => <button key={s} className={`subject-nav ${subject === s ? "selected" : ""}`} onClick={() => { navigate("all"); setSubject(s); }}><span className={`subject-dot dot-${subjectColors[s] ?? "stone"}`} />{s}<span className="ml-auto text-xs text-muted-foreground">{tasks.filter(t => t.subject === s && t.status !== "done").length}</span></button>)}</nav>
@@ -204,15 +211,16 @@ export function Planner() {
       </div>
     </aside>
 
-    <div className="main-shell"><header className="topbar"><div className="flex items-center gap-2 text-xs text-muted-foreground"><span>My workspace</span><ChevronRight size={13} /><span className="text-foreground">{viewNames[view]}</span></div><div className="flex items-center gap-4"><span className="hidden sm:block text-xs text-muted-foreground">{now?.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) ?? "Your workspace"}</span><span className="topbar-divider" /><button className="text-muted-foreground hover:text-primary" aria-label="About Daylight" onClick={() => setInfo("help")}><CircleHelp size={17} /></button></div></header>
+    <div className="main-shell"><header className="topbar"><div className="flex items-center gap-2 text-xs text-muted-foreground"><span>My workspace</span><ChevronRight size={13} /><span className="text-foreground">{viewNames[view]}</span></div><div className="flex items-center gap-4"><span className="hidden sm:block text-xs text-muted-foreground">{now?.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) ?? "Your workspace"}</span><span className="topbar-divider" />{!user && <WorkspaceBackupControl key="local-backup" disabled={loading || !authReady} onExport={exportTasks}/>}<button className="text-muted-foreground hover:text-primary" aria-label="About Daylight" onClick={() => setInfo("help")}><CircleHelp size={17} /></button></div></header>
     <main ref={contentRef} className="main-content">
-      {view==="today"?<header className="day-hero"><div><span className="section-overline"><span className="live-dot"/> A LITTLE LESS ON YOUR MIND</span><h1>Your day.<br/><em>A little more possible.</em></h1><p>School, practice, the things you care about.<br className="hero-linebreak"/> Let’s make room for all of it.</p></div><span className="hero-date">{now?.toLocaleDateString([],{weekday:"long",month:"long",day:"numeric"})}<small>One day at a time.</small></span></header>:<>      <div className="page-heading"><div><div className="eyebrow"><span className="size-1.5 rounded-full bg-primary" /> LESS MENTAL CLUTTER, MORE DAYLIGHT</div><h1>{viewNames[view]}<span className="heading-dot">.</span></h1><p>{view === "done" ? "Small steps add up. Here’s what you’ve finished." : view === "inbox" ? "A home for everything you haven’t started yet." : "School, side quests, and everything in between. You’ve got this."}</p></div><Button onClick={() => setEditor({ task: null })} disabled={loading} className="add-button" aria-label="Add task"><Plus size={16} />Add task<span className="key-hint" aria-hidden="true">+</span></Button></div></>}
+      {view==="today"?<header className="day-hero"><div><span className="section-overline"><span className="live-dot"/> A LITTLE LESS ON YOUR MIND</span><h1>Your day.<br/><em>A little more possible.</em></h1><p>School, practice, the things you care about.<br className="hero-linebreak"/> Let’s make room for all of it.</p></div><span className="hero-date">{now?.toLocaleDateString([],{weekday:"long",month:"long",day:"numeric"})}<small>One day at a time.</small></span></header>:<>      <div className="page-heading"><div><div className="eyebrow"><span className="size-1.5 rounded-full bg-primary" /> LESS MENTAL CLUTTER, MORE DAYLIGHT</div><h1>{viewNames[view]}<span className="heading-dot">.</span></h1><p>{view === "sat" ? `Your ${satContext?.goal ?? 1550} goal, one focused practice session at a time.` : view === "done" ? "Small steps add up. Here’s what you’ve finished." : view === "inbox" ? "A home for everything you haven’t started yet." : "School, side quests, and everything in between. You’ve got this."}</p></div><Button hidden={view==="sat"} onClick={() => setEditor({ task: null })} disabled={loading} className={view==="sat"?"hidden":"add-button"} aria-label="Add task"><Plus size={16} />Add task<span className="key-hint" aria-hidden="true">+</span></Button></div></>}
       {view==="today" && <nav className="day-mobile-jumps" aria-label="Jump within your day"><button onClick={()=>document.getElementById("day-conversation")?.scrollIntoView({block:"start",behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"})}><Sparkles size={13}/>Conversation</button><button onClick={()=>document.getElementById("day-plan")?.scrollIntoView({block:"start",behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"})}><CalendarDays size={13}/>Today’s plan<ArrowDownUp size={11}/></button></nav>}
+      {view==="sat" && error && <div role="alert" className="error-banner">{error}</div>}
       {view==="today" && error && <div role="alert" className="error-banner">{error}<button onClick={()=>void reload()}>Retry loading</button></div>}
       {view==="today" && (loading || !authReady) && <div className="day-loading" role="status"><Loader2 className="animate-spin" size={20}/>Opening your day…</div>}
 
-      {authReady && !loading && <div hidden={view!=="today"}><DayWorkspace tasks={tasks} planning={planningExport} now={now} onCalendar={()=>navigate("calendar")} onPlan={()=>buildFromConversation([],[])} onCheck={checkFromHome} onEdit={task=>setEditor({task})}><PlanningAssistant key={user?.id ?? "local-demo"} owner={user?.id ?? "local-demo"} onProgress={progressFromConversation} onPreferences={()=>setPreferencesOpen(true)} subjects={subjects} tasks={tasks} planning={planningExport} onBuild={buildFromConversation}/></DayWorkspace></div>}
-      <div hidden={view === "calendar" || view==="today"}><div hidden={view==="done"}><QuickCapture key={user?.id ?? "local-demo"} subjects={subjects} defaultSubject={subject==="all"?"Personal":subject} disabled={loading} onSave={save}/></div><section className="stats-grid" aria-label="Task overview"><div className="stat-card"><div><span className="stat-label">On your plate</span><div className="stat-number">{incomplete.length}<span>tasks</span></div><p>A place for every little thing</p></div><span className="stat-icon green"><ListTodo size={21} /></span></div>
+      {authReady && !loading && <div hidden={view!=="today"}><DayWorkspace tasks={tasks} planning={planningExport} now={now} onCalendar={()=>navigate("calendar")} onPlan={()=>buildFromConversation([],[])} onCheck={checkFromHome} onEdit={task=>setEditor({task})}><PlanningAssistant sat={satContext} key={user?.id ?? "local-demo"} owner={user?.id ?? "local-demo"} onProgress={progressFromConversation} onPreferences={()=>setPreferencesOpen(true)} subjects={subjects} tasks={tasks} planning={planningExport} onBuild={buildFromConversation}/></DayWorkspace></div>}
+      <div hidden={view === "calendar" || view==="today" || view==="sat"}><div hidden={view==="done"}><QuickCapture key={user?.id ?? "local-demo"} subjects={subjects} defaultSubject={subject==="all"?"Personal":subject} disabled={loading} onSave={save}/></div><section className="stats-grid" aria-label="Task overview"><div className="stat-card"><div><span className="stat-label">On your plate</span><div className="stat-number">{incomplete.length}<span>tasks</span></div><p>A place for every little thing</p></div><span className="stat-icon green"><ListTodo size={21} /></span></div>
         <div className="stat-card"><div><span className="stat-label">Due today</span><div className="stat-number">{dueToday}<span>{dueToday === 1 ? "task" : "tasks"}</span></div><p>{dueToday ? "Let’s take it one step at a time" : "A little breathing room today"}</p></div><span className="stat-icon peach"><Sun size={22} /></span></div>
         <div className="stat-card"><div><span className="stat-label">Time to make progress</span><div className="stat-number time-number">{formatMinutes(incomplete.reduce((sum, t) => sum + t.remaining_minutes, 0))}</div><p>Estimated work remaining</p></div><span className="stat-icon purple"><Clock3 size={21} /></span></div>
       </section>
@@ -242,6 +250,7 @@ export function Planner() {
       <section className="next-chapter"><div><span className="chapter-label">MAKE SPACE FOR YOUR DAY</span><h2>Your time, thoughtfully arranged.</h2><p>Make space for school, study, and everything beyond it.</p></div><button onClick={() => navigate("calendar")} className="flex items-center gap-2 text-xs font-medium text-primary">Open calendar<ArrowRight size={15} /></button></section>
       </div>
       {authReady && !loading && <div hidden={view !== "calendar"}><PlanningCalendar command={calendarCommand} onCommandHandled={id=>setCalendarCommand(current=>current?.id===id?null:current)} addTask={()=>setEditor({task:null})} openPreferences={()=>setPreferencesOpen(true)} visible={view === "calendar"} key={user?.id ?? "local-demo"} owner={user?.id ?? "local-demo"} tasks={tasks} preferencesOpen={preferencesOpen} closePreferences={() => setPreferencesOpen(false)} saveTask={save} editTask={task => setEditor({task})} registerExport={setPlanningExport}/></div>}
+      {authReady && !loading && <div hidden={view!=="sat"}><SatWorkspace key={user?.id ?? "local-demo"} owner={user?.id ?? "local-demo"} onChange={setSatContext} onSchedule={async task=>{await buildFromConversation([task],[]);setNotice("SAT review added to your plan.");}} onExport={exportTasks}/></div>}
       <button className="mobile-preferences" onClick={() => setPreferencesOpen(true)}>Study preferences</button>
     </main></div>
 

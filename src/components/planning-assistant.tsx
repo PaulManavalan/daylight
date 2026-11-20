@@ -14,12 +14,13 @@ import {parseDayBrief,progressIntent} from "@/lib/day-assistant";
 import {eventDrafts,nothing,protectedDraft,sameTask,subjectList,taskDrafts,type EventDraft} from "@/lib/planning-conversation";
 import {taskInputSchema,type Task,type TaskInput} from "@/lib/types";
 import {dateKey,type FixedBlock,type PlanningState,type Response} from "@/lib/scheduling";
+import type {SatState} from "@/lib/sat";
 type Message={role:"assistant"|"you";text:string};
-interface Props {owner:string;onProgress:(taskId:string,response:Response,minutes:number)=>Promise<string>;onPreferences:()=>void;subjects:string[];tasks:Task[];planning:PlanningState|null;onBuild:(tasks:TaskInput[],fixed:FixedBlock[],edits?:ReviewedTaskEdit[])=>Promise<void>}
+interface Props {sat?:SatState|null;owner:string;onProgress:(taskId:string,response:Response,minutes:number)=>Promise<string>;onPreferences:()=>void;subjects:string[];tasks:Task[];planning:PlanningState|null;onBuild:(tasks:TaskInput[],fixed:FixedBlock[],edits?:ReviewedTaskEdit[])=>Promise<void>}
 const localDateTime=(iso:string)=>{const d=new Date(iso);return dateKey(d)+"T"+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");};
 const welcome="Hey. Let's make a day that works for you. Tell me about school, homework, practice, work—whatever is on your plate. You can share it all at once, or I can walk you through it.";
 const conversationSchema=z.object({day:z.string(),messages:z.array(z.object({role:z.enum(["assistant","you"]),text:z.string()})).max(200),subjects:z.array(z.string()),step:z.number().int(),drafts:z.array(taskInputSchema),events:z.array(z.object({id:z.string(),title:z.string(),date:z.string(),start:z.string(),end:z.string()})),finished:z.boolean(),edits:z.array(z.object({taskId:z.string(),before:taskInputSchema,after:taskInputSchema})).default([])});
-export function PlanningAssistant({owner,onProgress,onPreferences,subjects:known,tasks,planning,onBuild}:Props){
+export function PlanningAssistant({sat=null,owner,onProgress,onPreferences,subjects:known,tasks,planning,onBuild}:Props){
  const brain=useAssistantBrain(owner);
  const [edits,setEdits]=useState<ReviewedTaskEdit[]>([]),[pendingReplan,setPendingReplan]=useState(false);
  const [persona,setPersona]=useState<AssistantPersona>(defaultPersona);
@@ -38,7 +39,7 @@ export function PlanningAssistant({owner,onProgress,onPreferences,subjects:known
  async function askBrain(text:string){
   operation.current=true;setBusy(true);setError("");setMessages(rows=>[...rows,{role:"you",text}]);setAnswer("");
   try{
-    const result=await brain.ask({persona:{name:persona.name,tone:persona.tone},context:brainContext(tasks,planning,drafts,events,new Date(),edits,(messages.slice(-4).filter(m=>m.role==="you").map(m=>m.text).join(" ")+" "+text).slice(-5000)),messages:[...messages.slice(-12).map(m=>({role:m.role==="you"?"user" as const:"assistant" as const,content:m.text.slice(0,5000)})),{role:"user",content:text}]},tasks);
+    const result=await brain.ask({persona:{name:persona.name,tone:persona.tone},context:brainContext(tasks,planning,drafts,events,new Date(),edits,(messages.slice(-4).filter(m=>m.role==="you").map(m=>m.text).join(" ")+" "+text).slice(-5000),sat),messages:[...messages.slice(-12).map(m=>({role:m.role==="you"?"user" as const:"assistant" as const,content:m.text.slice(0,5000)})),{role:"user",content:text}]},tasks);
     if(result.kind!=="none"){setPendingProgress(null);setPendingReplan(false);}
     if(result.kind==="capture"){const parsed=modelDrafts(result,text);setDrafts(parsed.tasks);setEvents(parsed.events);setStep(subjects.length+2);setFinished(false);}
     if(result.kind==="edit"){const projected=tasks.map(t=>({...t,...(edits.find(e=>e.taskId===t.id)?.after ?? {})}));const changed=taskEdits(result,projected,text).map(e=>({...e,before:edits.find(old=>old.taskId===e.taskId)?.before ?? taskInputSchema.parse(tasks.find(t=>t.id===e.taskId)!)}));setEdits(rows=>[...rows.filter(e=>!changed.some(c=>c.taskId===e.taskId)),...changed]);setStep(subjects.length+2);setFinished(false);}

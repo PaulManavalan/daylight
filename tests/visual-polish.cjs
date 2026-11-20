@@ -7,12 +7,11 @@ const temp=path.resolve('artifacts/visual-browser-temp');fs.mkdirSync(temp,{recu
 (async()=>{
  let server,browser,page;
  try{
-  server=require('node:child_process').spawn(process.execPath,['node_modules/next/dist/bin/next','start','--hostname','127.0.0.1','--port','3104'],{stdio:['ignore','pipe','pipe'],windowsHide:true});
-  await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Preview timed out')),20000);server.stdout.on('data',d=>{if(String(d).includes('Ready')){clearTimeout(timer);resolve();}});server.on('error',reject);});
+  const preview=await require('./browser-server.cjs').startBrowserServer();server=preview.process;
   browser=await chromium.launch({channel:'msedge',headless:true});page=await browser.newPage({viewport:{width:1440,height:1080},timezoneId:'America/New_York'});
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.route('**/api/assistant',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({available:false})}));
-  await page.goto('http://127.0.0.1:3104',{waitUntil:'networkidle'});
+  await page.goto(preview.url,{waitUntil:'networkidle'});
   const assistant=page.getByRole('region',{name:'Planning assistant',exact:true});await assistant.waitFor();
   await assistant.getByRole('textbox',{name:'Your reply'}).fill('Keep this thought while I look at my tasks.');
   await page.screenshot({path:'artifacts/daylight-polish-desktop.png',fullPage:true});

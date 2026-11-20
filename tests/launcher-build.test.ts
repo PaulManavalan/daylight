@@ -1,0 +1,28 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+const {sourceFingerprint,buildIsCurrent,recordBuild}=require('../scripts/launcher-build.cjs');
+test('launcher rebuilds changed source and configuration while ignoring documentation edits', t=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'daylight-build-test-'));
+ t.after(()=>{if(path.dirname(path.resolve(root))===path.resolve(os.tmpdir()))fs.rmSync(root,{recursive:true,force:true});});
+ fs.mkdirSync(path.join(root,'src'));fs.mkdirSync(path.join(root,'.next'));
+ fs.writeFileSync(path.join(root,'src','page.tsx'),'first');
+ assert.equal(buildIsCurrent(root),false);
+ fs.writeFileSync(path.join(root,'.next','BUILD_ID'),'test-build');
+ assert.equal(buildIsCurrent(root),false,'unknown build provenance triggers a rebuild');
+ recordBuild(root);assert.equal(buildIsCurrent(root),true);
+ const before=sourceFingerprint(root);
+ fs.writeFileSync(path.join(root,'README.md'),'documentation update');
+ assert.equal(sourceFingerprint(root),before);assert.equal(buildIsCurrent(root),true);
+ fs.writeFileSync(path.join(root,'src','page.tsx'),'updated UI');
+ assert.equal(buildIsCurrent(root),false);
+ recordBuild(root);assert.equal(buildIsCurrent(root),true);
+ fs.writeFileSync(path.join(root,'package.json'),'{"dependencies":{}}');
+ assert.equal(buildIsCurrent(root),false);
+ recordBuild(root);
+ fs.writeFileSync(path.join(root,'.env.local'),'NEXT_PUBLIC_SUPABASE_URL=https://example.invalid');
+ assert.equal(buildIsCurrent(root),false,'environment-file changes require a fresh build');
+ assert.throws(()=>recordBuild(root,before),/source changed during the build/);
+});

@@ -1,0 +1,19 @@
+// Synthetic real-model evaluation. No task repository or user storage is written.
+const ts=require('typescript'),fs=require('node:fs'),assert=require('node:assert/strict');
+require.extensions['.ts']=(m,file)=>m._compile(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,file);
+const {askLocalModel}=require('../src/lib/local-model.ts');
+const {brainContext,validateModelReply,modelDrafts}=require('../src/lib/assistant-brain.ts');
+const {defaults}=require('../src/lib/scheduling.ts');
+const now=new Date(2026,10,18,15),records=[];
+const task={id:'synthetic-essay',title:'English essay',subject:'English',description:'',deadline:new Date(2026,10,19,17).toISOString(),estimated_minutes:60,remaining_minutes:60,priority:'high',energy_level:'high',status:'not_started',user_id:'synthetic',actual_minutes:0,created_at:now.toISOString(),updated_at:now.toISOString()};
+async function ask(name,messages,tasks=[]){
+ const result=await askLocalModel({persona:{name:'Sol',tone:'calm'},context:brainContext(tasks,defaults(),[],[],now,[],messages.filter(m=>m.role==='user').map(m=>m.content).join(' ')),messages},AbortSignal.timeout(90000));
+ const reply=validateModelReply(result.result,tasks);records.push({case:name,model:result.model,reply});fs.mkdirSync('artifacts',{recursive:true});fs.writeFileSync('artifacts/conversation-model-evaluation.json',JSON.stringify(records,null,2));return reply;
+}
+(async()=>{
+ const vague=await ask('Overwhelmed, no assignment specified',[{role:'user',content:'I am overwhelmed with homework and I do not know where to start.'}]);assert.equal(vague.kind,'none',JSON.stringify(vague));assert.equal(vague.tasks.length,0);console.log('PASS: vague overload remains a conversation without invented tasks.');
+ const follow=await ask('Short answer completes prior clarification',[{role:'user',content:'I need to write a history essay.'},{role:'assistant',content:'About how much focused time will it take, and when is it due?'},{role:'user',content:'About 45 minutes. Friday at 5pm.'}]);assert.equal(follow.kind,'capture',JSON.stringify(follow));assert.equal(follow.tasks.length,1);assert.equal(follow.tasks[0].minutes,45);const grounded=modelDrafts(follow,'About 45 minutes. Friday at 5pm.',now);assert.equal(new Date(grounded.tasks[0].deadline).getDate(),20);assert.equal(new Date(grounded.tasks[0].deadline).getHours(),17);assert.match(follow.tasks[0].title,/history|essay/i);console.log('PASS: the short answer carries the earlier essay, estimate and deadline into one draft.');
+ const hypothetical=await ask('Hypothetical schedule discussion',[{role:'user',content:'What if I skip the English essay today?'}],[task]);assert.equal(hypothetical.kind,'none',JSON.stringify(hypothetical));assert.equal(hypothetical.progress.length,0);assert.equal(hypothetical.edits.length,0);console.log('PASS: hypothetical discussion does not become a task mutation.');
+ const ambiguous=await ask('More time, target ambiguous',[{role:'user',content:'I need more time.'}],[task,{...task,id:'synthetic-math',title:'Math worksheet',subject:'Math'}]);assert.equal(ambiguous.kind,'none',JSON.stringify(ambiguous));assert.equal(ambiguous.progress.length,0);console.log('PASS: ambiguous progress asks for clarification instead of selecting a task.');
+ console.log('All conversational real-model evaluations passed. No user data was modified.');
+})().catch(e=>{console.error(e);process.exitCode=1;});

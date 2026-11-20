@@ -11,6 +11,10 @@ test('launcher skips an occupied or unresponsive server and finds a free port', 
   const result=await chooseLocalServer(async (port:number)=>port===3102?'busy':'free');
   assert.deepEqual(result,{port:3103,reuse:false});
 });
+test('launcher prefers an existing secondary instance over an earlier free port', async () => {
+  const result=await chooseLocalServer(async (port:number)=>port===3104?'daylight':'free');
+  assert.deepEqual(result,{port:3104,reuse:true});
+});
 test('launcher reports exhausted ports and does not hide permission errors', async () => {
   await assert.rejects(chooseLocalServer(async ()=>'busy',3102,3103),/Ports 3102–3103 are busy/);
   await assert.rejects(chooseLocalServer(async ()=>{throw new Error('permission denied');}),/permission denied/);

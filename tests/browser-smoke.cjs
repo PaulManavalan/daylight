@@ -9,7 +9,7 @@ const {chromium}=playwright;
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 
-async function smoke() {
+async function smoke(url) {
   const browser = await chromium.launch({ channel: "msedge", headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1080 }, timezoneId: "America/New_York" });
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -19,7 +19,7 @@ async function smoke() {
   page.on("pageerror", error => errors.push(error.message));
   try {
     await page.route('**/api/assistant',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({available:false})}));
-    await page.goto(process.argv.includes("--serve") ? "http://127.0.0.1:3100" : "http://127.0.0.1:3000", { waitUntil: "networkidle" });
+    await page.goto(url, { waitUntil: "networkidle" });
     await page.getByRole("button", { name: "All tasks", exact: true }).click();
     await page.getByRole("button", { name: "Draft the history essay", exact: true }).waitFor();
     assert.equal(await page.locator("tbody tr").count(), 7);
@@ -196,15 +196,10 @@ async function smoke() {
 (async()=>{
   let server;
   try {
+    let url="http://127.0.0.1:3000";
     if(process.argv.includes("--serve")) {
-      server=require("node:child_process").spawn(process.execPath,["node_modules/next/dist/bin/next","start","--hostname","127.0.0.1","--port","3100"],{stdio:["ignore","pipe","pipe"],windowsHide:true});
-      await new Promise((resolve,reject)=>{
-        const timer=setTimeout(()=>reject(new Error("Local test server did not become ready")),15000);
-        server.stdout.on("data",data=>{if(String(data).includes("Ready")){clearTimeout(timer);resolve();}});
-        server.once("error",error=>{clearTimeout(timer);reject(error);});
-        server.once("exit",code=>{clearTimeout(timer);reject(new Error(`Local server exited (${code})`));});
-      });
+      const preview=await require('./browser-server.cjs').startBrowserServer();server=preview.process;url=preview.url;
     }
-    await smoke();
+    await smoke(url);
   } finally { server?.kill(); }
 })().catch(error=>{console.error(error);process.exit(1);});

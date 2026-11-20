@@ -2,6 +2,7 @@ import { z } from "zod";
 import { getSupabase } from "./supabase";
 import { createDemoTasks } from "./seed";
 import { taskInputSchema, type Task, type TaskInput } from "./types";
+import {recoverLocalRestore} from './workspace-backup';
 
 const storageKey = "daylight.tasks.v1";
 const storedTaskSchema = taskInputSchema.safeExtend({
@@ -14,6 +15,7 @@ export interface TaskRepository {
   remove(id: string): Promise<void>;
 }
 function readLocal(): Task[] {
+  recoverLocalRestore(localStorage);
   const raw = localStorage.getItem(storageKey);
   if (!raw) {
     const seed = createDemoTasks();

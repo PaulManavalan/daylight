@@ -1,8 +1,10 @@
 import {routingPrompt,proposalPrompt,dialoguePrompt,type BrainRequest,type ModelReply} from "./assistant-brain";
+import {wantsOpenChat} from './chat-actions';
 // Explanations and hypothetical discussion must never become task mutations.
 export function isPlanExplanation(request:BrainRequest){return /^\s*(?:what\s+if|hypothetically|suppose|why\s+(?:is|are|was|were|did|does)|how\s+(?:does|did)\s+(?:my|the|this)|(?:can|could)\s+you\s+explain|explain\s+(?:why|my|the|this))\b/i.test(request.messages.at(-1)?.content ?? "");}
 export function isExploratoryConversation(request:BrainRequest){
  const text=request.messages.at(-1)?.content ?? '';
+ if(wantsOpenChat(text))return true;
  const conversational=/\b(?:overwhelmed|overloaded|don't know where to start|do not know where to start|not sure where to start)\b|\b(?:can|could)\s+(?:we|you)\s+(?:talk|think|help me think|walk me through)\b/i.test(text);
  const action=/\b(?:add|create|schedule|replan|rebalance|move|change|set|remove|delete|finished|completed|spent|worked)\b|\bplan\s+(?:my|the)\s+(?:day|week)\b|\b\d+\s*(?:minutes?|mins?|hours?|hrs?)\b/i.test(text);
  return conversational && !action;
@@ -55,5 +57,6 @@ export function modelMessages(request:BrainRequest,compact=false,kind?:ModelRepl
  for(const message of [...request.messages].reverse()){if(message.content.length>budget){if(!history.length)throw new Error("Please send a shorter message.");break;}history.unshift(message);budget-=message.content.length;}
  const discussion=isPlanExplanation(request)?"\nREAD-ONLY DISCUSSION: Explain possible consequences using conditional language. Skipping or postponing work leaves its remaining minutes unchanged; it does not complete or erase the work. Never say you changed, reduced, completed, moved or saved anything. If a deadline is at risk, explain that risk and ask about an achievable alternative.":isExploratoryConversation(request)?"\nEXPLORATORY CONVERSATION: The student is asking for support or to think together. Existing tasks are context, not new assignments to capture. Acknowledge their concern and discuss a grounded starting point or ask one useful question. Do not offer a new task draft or claim you changed anything.":"";
  const clarification=needsProgressClarification(request)?"\nCLARIFICATION REQUIRED: Do not propose any task changes yet. Ask for the missing task or amount of time, acknowledging details already supplied. Never guess a duration.":"";
- return [{role:"system" as const,content:(routeOnly?routingPrompt():kind && kind!=="none" && kind!=="replan"?proposalPrompt(kind,request.persona):dialoguePrompt(request.persona)+"\nRESPONSE PHASE: return only a natural conversational reply; no kind or proposals. Say what actually fits or ask a clarification. No changes are saved by this reply."+discussion+clarification)+"\nCurrent planning DATA (may be truncated; do not invent omitted items):\n"+context},...history];
+ const paused=wantsOpenChat(latest.content)?'\nGUIDED SETUP STOPPED: The student asked to simply talk. Respect that change of direction. Do not continue earlier subject, event or outside-school intake questions. Have an open conversation about what they choose; do not require planning details.':'';
+ return [{role:"system" as const,content:(routeOnly?routingPrompt():kind && kind!=="none" && kind!=="replan"?proposalPrompt(kind,request.persona):dialoguePrompt(request.persona)+"\nRESPONSE PHASE: return only a natural conversational reply; no kind or proposals. Say what actually fits or ask a clarification. No changes are saved by this reply."+discussion+clarification+paused)+"\nCurrent planning DATA (may be truncated; do not invent omitted items):\n"+context},...history];
 }

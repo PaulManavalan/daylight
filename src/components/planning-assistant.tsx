@@ -8,7 +8,7 @@ import {AssistantIdentity} from "./assistant-identity";
 import {defaultPersona,loadPersona,toneLabels,voiceText,type AssistantPersona} from "@/lib/assistant-persona";
 import {AssistantBrainControls} from "./assistant-brain-controls";
 import {useAssistantBrain} from "./use-assistant-brain";
-import {chatDecision,type ChatActionTarget} from "@/lib/chat-actions";
+import {chatDecision,wantsOpenChat,type ChatActionTarget} from "@/lib/chat-actions";
 import {ChatHistory,chatMessageSchema,type ChatMessage} from "@/lib/chat-history";
 import {brainContext,modelDrafts,taskEdits,type ReviewedTaskEdit} from "@/lib/assistant-brain";
 import {dailyAgenda} from "@/lib/agenda";
@@ -21,7 +21,7 @@ type Message=ChatMessage;
 interface Props {sat?:SatState|null;owner:string;onProgress:(taskId:string,response:Response,minutes:number)=>Promise<string>;onPreferences:()=>void;subjects:string[];tasks:Task[];planning:PlanningState|null;onBuild:(tasks:TaskInput[],fixed:FixedBlock[],edits?:ReviewedTaskEdit[])=>Promise<void>}
 const localDateTime=(iso:string)=>{const d=new Date(iso);return dateKey(d)+"T"+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");};
 const welcome="Hey. What's on your mind? We can talk it through, figure out what matters today, and make room for it together.";
-const conversationSchema=z.object({day:z.string(),messages:z.array(chatMessageSchema).max(200),subjects:z.array(z.string()),step:z.number().int(),drafts:z.array(taskInputSchema),events:z.array(z.object({id:z.string(),title:z.string(),date:z.string(),start:z.string(),end:z.string()})),finished:z.boolean(),edits:z.array(z.object({taskId:z.string(),before:taskInputSchema,after:taskInputSchema})).default([])});
+const conversationSchema=z.object({day:z.string(),messages:z.array(chatMessageSchema).max(200),subjects:z.array(z.string()),step:z.number().int(),guided:z.boolean().default(false),drafts:z.array(taskInputSchema),events:z.array(z.object({id:z.string(),title:z.string(),date:z.string(),start:z.string(),end:z.string()})),finished:z.boolean(),edits:z.array(z.object({taskId:z.string(),before:taskInputSchema,after:taskInputSchema})).default([])});
 export function PlanningAssistant({sat=null,owner,onProgress,onPreferences,subjects:known,tasks,planning,onBuild}:Props){
  const brain=useAssistantBrain(owner);
  const [edits,setEdits]=useState<ReviewedTaskEdit[]>([]),[pendingReplan,setPendingReplan]=useState(false);
@@ -32,20 +32,21 @@ export function PlanningAssistant({sat=null,owner,onProgress,onPreferences,subje
  const [busy,setBusy]=useState(false),[error,setError]=useState(""),[finished,setFinished]=useState(false);
  const [pendingProgress,setPendingProgress]=useState<ReturnType<typeof progressIntent>>(null);
  const [restored,setRestored]=useState(false);
+ const [guided,setGuided]=useState(false);
  const history=useRef<ChatHistory|null>(null),[historyNotice,setHistoryNotice]=useState("");
  const [lastProposal,setLastProposal]=useState<{target:ChatActionTarget;index:number}|null>(null);
  useEffect(()=>{let next={...defaultPersona};try{next=loadPersona(localStorage,owner);}catch{}setPersona(next);setMessages(rows=>rows.length===1?[{role:"assistant",text:voiceText(welcome,next.tone)}]:rows);},[owner]);
  useEffect(()=>{
   const today=dateKey(new Date());let persistent:ReturnType<ChatHistory['load']>=null,sessionLoaded=false;
   try{const store=new ChatHistory(localStorage,owner);history.current=store;persistent=store.load();}catch(e){setHistoryNotice(e instanceof Error?e.message:'Chat history could not be loaded.');}
-  try{const raw=sessionStorage.getItem("daylight.conversation.v1."+owner);if(raw){const saved=conversationSchema.safeParse(JSON.parse(raw));if(saved.success && saved.data.day===today){const d=saved.data,sameTranscript=!persistent || JSON.stringify(d.messages.slice(-persistent.messages.length).map(m=>[m.role,m.text]))===JSON.stringify(persistent.messages.map(m=>[m.role,m.text]));if(sameTranscript){setMessages(persistent?.messages.length?persistent.messages:d.messages);setSubjects(d.subjects);setStep(d.step);setDrafts(d.drafts);setEvents(d.events);setFinished(d.finished);setEdits(d.edits);sessionLoaded=true;}}}}catch{}
+  try{const raw=sessionStorage.getItem("daylight.conversation.v1."+owner);if(raw){const saved=conversationSchema.safeParse(JSON.parse(raw));if(saved.success && saved.data.day===today){const d=saved.data,sameTranscript=!persistent || JSON.stringify(d.messages.slice(-persistent.messages.length).map(m=>[m.role,m.text]))===JSON.stringify(persistent.messages.map(m=>[m.role,m.text]));if(sameTranscript){setMessages(persistent?.messages.length?persistent.messages:d.messages);setSubjects(d.subjects);setStep(d.step);setGuided(d.guided);setDrafts(d.drafts);setEvents(d.events);setFinished(d.finished);setEdits(d.edits);sessionLoaded=true;}}}}catch{}
   if(!sessionLoaded && persistent?.messages.length){const saved=persistent;setMessages(saved.messages.map(m=>m.at?m:{...m,at:new Date(saved.day+'T12:00:00').toISOString()}));}
   setRestored(true);
  },[owner]);
- useEffect(()=>{if(!restored)return;try{const data=conversationSchema.safeParse({day:dateKey(new Date()),messages:messages.slice(-200),subjects,step,drafts,events,finished,edits});if(data.success)sessionStorage.setItem("daylight.conversation.v1."+owner,JSON.stringify(data.data));}catch{}},[restored,owner,messages,subjects,step,drafts,events,finished,edits]);
+ useEffect(()=>{if(!restored)return;try{const data=conversationSchema.safeParse({day:dateKey(new Date()),messages:messages.slice(-200),subjects,step,guided,drafts,events,finished,edits});if(data.success)sessionStorage.setItem("daylight.conversation.v1."+owner,JSON.stringify(data.data));}catch{}},[restored,owner,messages,subjects,step,guided,drafts,events,finished,edits]);
  useEffect(()=>{if(!restored)return;try{history.current?.save(dateKey(new Date()),messages.map(m=>m.at?m:{...m,at:new Date().toISOString()}));}catch(e){setHistoryNotice(e instanceof Error?e.message:'Chat history could not be saved.');}},[restored,messages]);
  const operation=useRef(false),last=useRef<HTMLDivElement>(null),input=useRef<HTMLTextAreaElement>(null);
- const review=step>=subjects.length+2 && step!==-1;
+ const review=(brain.available||guided) && step>=subjects.length+2 && step!==-1;
  useEffect(()=>{last.current?.parentElement?.scrollTo({top:last.current.parentElement.scrollHeight,behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"});},[messages.length,review]);
  async function askBrain(text:string){
   operation.current=true;setBusy(true);setError("");setMessages(rows=>[...rows,{role:"you",text}]);setAnswer("");
@@ -64,7 +65,16 @@ export function PlanningAssistant({sat=null,owner,onProgress,onPreferences,subje
  }
  async function approveReplan(){if(operation.current)return;operation.current=true;setBusy(true);setError("");try{await onBuild([],[]);setPendingReplan(false);setMessages(rows=>[...rows,{role:"assistant",text:"Plan refreshed. The timeline shows what fits and what still needs a decision."}]);}catch(e){setError(e instanceof Error?e.message:"The plan could not be saved.");}finally{operation.current=false;setBusy(false);}}
  async function reply(text:string){
-  if(operation.current || brain.loading || brain.provider==="checking" || (review && !finished && !brain.available) || !text.trim())return;
+  if(operation.current || brain.loading || brain.provider==="checking" || !text.trim())return;
+  const openChat=wantsOpenChat(text),guidedRequest=/^(walk me through(?: today)?|ask me questions|help me get started)[.! ]*$/i.test(text);
+  if(openChat){setGuided(false);setStep(-2);setPendingProgress(null);setLastProposal(null);}
+  if(!brain.available && (openChat || (!guided && !guidedRequest))){
+   operation.current=true;setBusy(true);setError('');
+   try{if(await brain.reconnect())await askBrain(text);else setError('Chat is not connected yet. Your message is kept below. Connect local AI or enable the browser model to talk; guided setup is paused.');}
+   finally{operation.current=false;setBusy(false);}return;
+  }
+  if(review && !finished && !brain.available)return;
+  if(!brain.available && guidedRequest)setGuided(true);
   if(brain.available){
    const pending:ChatActionTarget[]=[];if(review&&!finished&&(drafts.length||events.length||edits.length))pending.push('draft');if(pendingProgress)pending.push('progress');if(pendingReplan)pending.push('replan');
    const decision=chatDecision(text,pending,lastProposal?.index===messages.length-1?lastProposal.target:null);
@@ -110,7 +120,7 @@ export function PlanningAssistant({sat=null,owner,onProgress,onPreferences,subje
    setMessages(rows=>[...rows,{role:"you",text},{role:"assistant",text:voiceText(response,persona.tone)}]);setStep(nextStep);setAnswer("");setError("");requestAnimationFrame(()=>input.current?.focus());
   }catch(e){setError(e instanceof ZodError?e.issues[0].message:e instanceof Error?e.message:"I couldn't read that. Try a shorter message.");}
  }
- function reset(){setLastProposal(null);setEdits([]);setPendingReplan(false);setStep(-2);setPendingProgress(null);setSubjects([]);setDrafts([]);setEvents([]);setMessages([{role:"assistant",text:voiceText(welcome,persona.tone)}]);setError("");setFinished(false);setAnswer("");}
+ function reset(){setGuided(false);setLastProposal(null);setEdits([]);setPendingReplan(false);setStep(-2);setPendingProgress(null);setSubjects([]);setDrafts([]);setEvents([]);setMessages([{role:"assistant",text:voiceText(welcome,persona.tone)}]);setError("");setFinished(false);setAnswer("");}
  function downloadChat(){const url=URL.createObjectURL(new Blob([JSON.stringify({version:1,day:dateKey(new Date()),messages},null,2)],{type:'application/json'})),link=document.createElement('a');link.href=url;link.download='daylight-chat-'+dateKey(new Date())+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
  async function build(){
   if(operation.current)return;operation.current=true;setBusy(true);setError("");
@@ -125,7 +135,8 @@ export function PlanningAssistant({sat=null,owner,onProgress,onPreferences,subje
   finally{operation.current=false;setBusy(false);}
  }
  return <section className="planning-assistant" aria-label="Planning assistant"><AssistantIdentity owner={owner} persona={persona} busy={busy} onChange={next=>{setPersona(next);setMessages(rows=>rows.length===1 && step===-2?[{role:"assistant",text:voiceText(welcome,next.tone)}]:[...rows,{role:"assistant",text:"I'll keep things "+toneLabels[next.tone].toLowerCase()+". Your planning preferences and saved work stay as they are."}]);}}/>
- <AssistantBrainControls brain={brain}/>
+ <AssistantBrainControls brain={brain} onBasicPlanner={()=>{setGuided(true);setStep(-2);setFinished(false);setError("");}}/>
+ {guided && !brain.available && <div className="basic-planner-notice"><span>Basic planner · guided capture, not AI chat</span><Button variant="ghost" size="sm" disabled={busy} onClick={()=>{setGuided(false);setStep(-2);setError("");void brain.reconnect();}}>Switch to chat</Button></div>}
  <div className="assistant-context"><span>School, work, and a life outside both.</span><button onClick={onPreferences}>Study preferences ↗</button></div>
  <div className="assistant-messages" role="log" aria-label="Planning conversation" aria-live="polite" aria-relevant="additions">{messages.map((m,i)=><div key={i} className={`assistant-message ${m.role=== "you"?"from-you":"from-daylight"}`}><small>{m.role==="assistant" && <AssistantAvatar variant={persona.avatar} size={22}/>} {m.role==="you"?"You":persona.name}</small><p>{m.text}</p></div>)}<div ref={last}/></div>
  {brain.thinking && <div className="brain-thinking" role="status"><AssistantAvatar variant={persona.avatar} thinking size={26}/><span>Thinking through your day…</span><span className="thinking-dots" aria-hidden="true"><i/><i/><i/></span></div>}
@@ -141,8 +152,8 @@ export function PlanningAssistant({sat=null,owner,onProgress,onPreferences,subje
  {!drafts.length && !events.length && !edits.length && <p>No new items. I can still arrange the tasks you already have.</p>}
  {planning && <p>{planning.fixed.length} saved protected-time definitions and your study preferences will also be respected.</p>}
  <Button disabled={busy} onClick={()=>void build()}>{busy?<Loader2 size={16} className="animate-spin"/>:<Sparkles size={16}/>} {busy?"Building your day…":"Build my day"}<ArrowRight size={15}/></Button></div>}
- {(!review || finished || brain.available) && <><div className="assistant-suggestions">{(step===-2 || finished) && <><Button size="sm" variant="outline" disabled={busy} onClick={()=>void reply("Walk me through today")}>Help me get started</Button><Button size="sm" variant="ghost" disabled={busy} onClick={()=>void reply("Plan around saved work")}>Rebalance my day</Button></>}{(!brain.available && step===-1?known.slice(0,8):[]).map(s=><Button key={s} size="sm" variant="outline" onClick={()=>setAnswer(current=>current?current+", "+s:s)}>{s}</Button>)}{!brain.available && step===-1 && known.length>0 && <Button size="sm" variant="ghost" onClick={()=>reply(known.join(", "))}>Use my subjects</Button>}{!brain.available && step>=-1 && !finished && <Button size="sm" variant="ghost" onClick={()=>void reply("none")}>{step===-1?"Outside school only":"Nothing new here"}</Button>}</div>
- <form className="assistant-composer" onSubmit={e=>{e.preventDefault();reply(answer);}}><label className="sr-only" htmlFor="assistant-answer">Your reply</label><textarea disabled={busy} id="assistant-answer" ref={input} value={answer} maxLength={5000} rows={3} onChange={e=>setAnswer(e.target.value)} onKeyDown={e=>{if(e.key==="Enter" && !e.shiftKey && !e.nativeEvent.isComposing){e.preventDefault();void reply(answer);}}} placeholder={brain.available?"Tell me about your day in your own words—or tell me what changed…":step===-2 || finished?"Math: worksheet 30 min due tomorrow; soccer 4–6pm; laundry 20 min…":step===-1?"Math, English and Biology…":"Tell me what’s on your mind…"}/><Button type="submit" disabled={busy || brain.loading || brain.provider==="checking" || !answer.trim()}>{busy?<Loader2 size={15} className="animate-spin"/>:<Send size={15}/>}Send</Button></form><p className="assistant-hint">{brain.available?"Ask a question, explain a change, or tell me what’s on your mind. Enter to send · Shift+Enter for a new line.":"Share a few things at once, separated by semicolons or new lines. Estimates and dates are always yours to adjust."}</p></>}
+ {(!review || finished || brain.available) && <><div className="assistant-suggestions">{(step===-2 || finished || (!brain.available && !guided)) && <><Button size="sm" variant="outline" disabled={busy} onClick={()=>void reply(brain.available?"Help me find a starting point.":"Walk me through today")}>{brain.available?"Help me get started":"Guided setup"}</Button><Button size="sm" variant="ghost" disabled={busy} onClick={()=>void reply("Plan around saved work")}>Rebalance my day</Button></>}{(guided && !brain.available && step===-1?known.slice(0,8):[]).map(s=><Button key={s} size="sm" variant="outline" onClick={()=>setAnswer(current=>current?current+", "+s:s)}>{s}</Button>)}{guided && !brain.available && step===-1 && known.length>0 && <Button size="sm" variant="ghost" onClick={()=>reply(known.join(", "))}>Use my subjects</Button>}{guided && !brain.available && step>=-1 && !finished && <Button size="sm" variant="ghost" onClick={()=>void reply("none")}>{step===-1?"Outside school only":"Nothing new here"}</Button>}</div>
+ <form className="assistant-composer" onSubmit={e=>{e.preventDefault();reply(answer);}}><label className="sr-only" htmlFor="assistant-answer">Your reply</label><textarea disabled={busy} id="assistant-answer" ref={input} value={answer} maxLength={5000} rows={3} onChange={e=>setAnswer(e.target.value)} onKeyDown={e=>{if(e.key==="Enter" && !e.shiftKey && !e.nativeEvent.isComposing){e.preventDefault();void reply(answer);}}} placeholder={brain.available || !guided?"Tell me about your day in your own words—or tell me what changed…":step===-2 || finished?"Math: worksheet 30 min due tomorrow; soccer 4–6pm; laundry 20 min…":step===-1?"Math, English and Biology…":"Tell me what’s on your mind…"}/><Button type="submit" disabled={busy || brain.loading || brain.provider==="checking" || !answer.trim()}>{busy?<Loader2 size={15} className="animate-spin"/>:<Send size={15}/>}Send</Button></form><p className="assistant-hint">{brain.available || !guided?"Ask a question, explain a change, or tell me what’s on your mind. Enter to send · Shift+Enter for a new line.":"Share a few things at once, separated by semicolons or new lines. Estimates and dates are always yours to adjust."}</p></>}
  {finished && <p role="status" className="assistant-success">Your day is up to date. Keep talking whenever something changes.</p>}
  {error && <p role="alert" className="error-banner">{error}</p>}
  {historyNotice && <p role="status" className="assistant-hint">{historyNotice}</p>}

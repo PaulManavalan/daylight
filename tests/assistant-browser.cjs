@@ -25,6 +25,7 @@ const temp=path.resolve('artifacts/assistant-browser-temp');fs.mkdirSync(temp,{r
   await assistant.locator('.assistant-identity strong').filter({hasText:'Orbit'}).waitFor();
   assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('daylight.assistant-persona.v1.local-demo')).tone),'direct');
   async function say(text){await assistant.getByRole('textbox',{name:'Your reply',exact:true}).fill(text);await assistant.getByRole('button',{name:'Send',exact:true}).click();}
+  await assistant.getByRole('button',{name:'Use basic planner',exact:true}).click();
   await say('Math, English');await say('Assistant worksheet 30 min due tomorrow; Assistant revision 45 min due Friday');await say('none');
   await say('Assistant soccer 4-6pm; Assistant meetup 7-8');await say('Assistant laundry 20 min; Assistant portfolio 45 min due Friday');
   await assistant.getByRole('heading',{name:'Your day, ready to review',exact:true}).waitFor();
@@ -57,6 +58,7 @@ const temp=path.resolve('artifacts/assistant-browser-temp');fs.mkdirSync(temp,{r
   await page.reload({waitUntil:'networkidle'});
   await assistant.getByText(/reclaimed its remaining time/).waitFor();
   await assistant.getByRole('button',{name:'Start a fresh conversation',exact:true}).click();
+  await assistant.getByRole('button',{name:'Use basic planner',exact:true}).click();
   await say('Math: Home brain dump 25 min due tomorrow; Home piano practice 4-5pm; Laundry test 20 min');
   assert.equal(await assistant.locator('.assistant-review fieldset').count(),3);
   await assistant.getByRole('button',{name:'Build my day',exact:true}).click();

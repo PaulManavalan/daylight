@@ -1,7 +1,11 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {chatDecision} from '../src/lib/chat-actions';
+import {chatDecision,wantsOpenChat} from '../src/lib/chat-actions';
 import {ChatHistory,chatHistoryKey} from '../src/lib/chat-history';
+test('asking to talk or pause intake exits guided setup without treating the words as tasks',()=>{
+ for(const text of ['wait no i js wanna talk','I just want to chat','can we talk?','stop asking questions','pause the intake'])assert.equal(wantsOpenChat(text),true);
+ for(const text of ['Math worksheet 25 minutes','I finished the essay','cancel that update'])assert.equal(wantsOpenChat(text),false);
+});
 test('chat approval belongs to the latest visible proposal and never treats a qualification as consent',()=>{
  for(const text of ['yes','yeah, do that','go ahead','sounds good'])assert.deepEqual(chatDecision(text,['draft'],'draft'),{action:'approve',target:'draft'});
  for(const text of ['yes, but make it 30 minutes','maybe yes','what if I say yes?','yes'])assert.equal(chatDecision(text,['draft'],text==='yes'?null:'draft'),null);

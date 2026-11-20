@@ -1,4 +1,5 @@
 export type ChatActionTarget='draft'|'progress'|'replan';
+export function wantsOpenChat(text:string){return /\b(?:just|only|wanna|want to|rather|can we|let['’]s)\b.{0,32}\b(?:talk|chat)\b|\b(?:stop|pause|cancel)\b.{0,24}\b(?:setup|intake|questions|planning)\b/i.test(text);}
 /** Only explicit, standalone confirmations can approve a visible proposal. */
 export function chatDecision(text:string,pending:ChatActionTarget[],latest:ChatActionTarget|null):{action:'approve'|'decline';target:ChatActionTarget}|null{
  const value=text.trim().toLowerCase().replace(/[.!]+$/,'').trim();

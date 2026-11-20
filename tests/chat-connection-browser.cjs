@@ -1,0 +1,21 @@
+const path=require('node:path'),fs=require('node:fs'),assert=require('node:assert/strict');
+const {chromium}=require(path.join(process.env.USERPROFILE,'.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright'));
+const temp=path.resolve('artifacts/connection-browser-temp');fs.mkdirSync(temp,{recursive:true});process.env.TEMP=temp;process.env.TMP=temp;
+(async()=>{let preview,browser,page;try{
+ preview=await require('./browser-server.cjs').startBrowserServer();browser=await chromium.launch({channel:'msedge',headless:true});page=await browser.newPage({viewport:{width:1440,height:1080},timezoneId:'America/New_York'});await page.emulateMedia({reducedMotion:'reduce'});
+ let connected=false,failReply=false,posts=0;const requests=[];
+ await page.route('**/api/assistant',async route=>{
+  if(route.request().method()==='GET')return route.fulfill({json:connected?{available:true,model:'test-local',models:['test-local']}:{available:false}});
+  posts++;requests.push(route.request().postDataJSON());if(failReply)return route.fulfill({status:503,json:{error:'Test local model temporarily unavailable.'}});
+  return route.fulfill({json:{model:'test-local',result:{kind:'none',reply:'Sure. What would you like to talk about?',tasks:[],events:[],edits:[],progress:[]}}});
+ });
+ await page.goto(preview.url,{waitUntil:'networkidle'});const assistant=page.getByRole('region',{name:'Planning assistant',exact:true});await assistant.getByText('Chat disconnected · basic planner available',{exact:false}).waitFor();const before=await page.evaluate(()=>localStorage.getItem('daylight.tasks.v1'));
+ const say=async text=>{await assistant.getByRole('textbox',{name:'Your reply',exact:true}).fill(text);await assistant.getByRole('button',{name:'Send',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('#assistant-answer')?.disabled && !document.querySelector('.brain-thinking'));};
+ await say('hi i have work');await assistant.getByRole('alert').filter({hasText:'Chat is not connected yet'}).waitFor();assert.equal(await assistant.getByRole('textbox',{name:'Your reply',exact:true}).inputValue(),'hi i have work');assert.equal(await assistant.locator('.assistant-message').count(),1,'Disconnected chat must not produce a scripted answer.');
+ await assistant.getByRole('button',{name:'Guided setup',exact:true}).click();await assistant.getByText(/What subjects do you have work for/).waitFor();await say('Math');await say('no work for that');await assistant.getByText(/What happens after school/).waitFor();
+ connected=true;await say('wait no i js wanna talk');await assistant.getByText('Sure. What would you like to talk about?',{exact:true}).waitFor();assert.equal(posts,1);assert.equal(requests[0].messages.at(-1).content,'wait no i js wanna talk');assert.equal(await assistant.locator('.basic-planner-notice').count(),0);assert.equal(await assistant.getByText(/Anything outside school to make room for/).count(),0,'The exact reported reply must not advance the intake.');assert.equal(await page.evaluate(()=>localStorage.getItem('daylight.tasks.v1')),before);
+ failReply=true;await say('Can we talk about motivation?');await assistant.getByRole('alert').filter({hasText:'temporarily unavailable'}).waitFor();assert.equal(await assistant.getByRole('textbox',{name:'Your reply',exact:true}).inputValue(),'Can we talk about motivation?');assert.equal(await assistant.getByText(/Anything outside school to make room for/).count(),0);assert.equal(await page.evaluate(()=>localStorage.getItem('daylight.tasks.v1')),before);
+ await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:'artifacts/daylight-chat-connection-mobile.png',fullPage:true});
+ console.log('Chat connection QA passed: no silent scripted fallback, message retained while disconnected, explicit guided mode, exact intake escape, immediate reconnected model reply, failed-generation recovery and mobile width. Model transport was mocked.');
+ }catch(error){if(page)await page.screenshot({path:'artifacts/daylight-chat-connection-failure.png',fullPage:true});throw error;}finally{await browser?.close();preview?.process.kill();}
+})().catch(error=>{console.error(error);process.exitCode=1;});

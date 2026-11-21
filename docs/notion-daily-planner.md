@@ -17,13 +17,25 @@ Preserve and reuse working scheduling constraints and Notion access code where u
 
 ## Facts still requiring clarification
 
-- The running list contains yellow-highlighted text. Its meaning has not yet been confirmed; do not assume that color means urgent or due today.
+- Yellow highlights are confirmed as work for today; they do not establish urgency or deadlines.
 - Weekly notes name activities without times or an unambiguous calendar week. Do not silently convert them into today's fixed appointments.
-- The first actual work window and today's fixed commitments have not yet been confirmed.
+- The app must learn the actual work window and today's fixed commitments conversationally.
 - Automatic app-side Notion access still requires a real authorized connection. Access through the development chat can validate the workflow, but is not proof that the deployed app can refresh the list itself.
 
 Private task contents, page snapshots and credentials must not be committed to this public repository. Use synthetic fixtures for tests. Validate a real daily-plan example with the user's confirmed context before expanding the interface or promoting this branch to production.
 
 ## First branch increment
 
-The read-only `running-list` Notion action preserves individual yellow highlight spans, explicit checklist state, standalone items and separate untimed weekly notes. It reports its read time and bounded-read warnings. It does not assign highlight meaning or generate a plan yet. The next step is to validate the first daily plan using the user's confirmed available time, commitments and priorities.
+The read-only `running-list` Notion action preserves individual yellow highlight spans, explicit checklist state, standalone items and separate untimed weekly notes. It reports its read time and bounded-read warnings. It does not assign highlight meaning or generate a plan yet. The next increment below implements the in-app conversation rather than asking the user to specify a day in the development chat.
+
+## Confirmed interaction and branch preview
+
+Yellow highlights mean work the user wants to do today. The AI in the app asks about today's events, anything else the user wants to do, and the usable work window. The development chat should not substitute one hand-authored day for that product flow. Meals and workout planning are deferred.
+
+The focused preview is `/day` on `codex/notion-daily-planner`. The original workspace remains at `/` and on `main`. The preview reads a page through the existing Notion OAuth connection, or uses an explicitly selected synthetic sample. It does not import the list into the legacy task repository. App-side OAuth credentials must be configured separately; the development chat's Notion connection is not an app credential.
+
+For the owner's local preview only, `DAYLIGHT_LOCAL_NOTION_SNAPSHOT=1` enables a fixed snapshot at ignored `artifacts/private-running-list.json`. Requests must use a loopback authority and same origin; Vercel always disables this endpoint. The interface shows the read time and makes clear it is not a live feed. Never commit the snapshot or credentials.
+
+Local Ollama and the optional free browser model use a separate structured `notion_day` conversation mode. They retain day facts, exclude appointments with unknown times, and leave timetable generation to the deterministic scheduler. Incomplete events prevent generation. Current work uses suggested 25-minute focus blocks and a three-hour allowance, visibly distinguished from assignment completion estimates. Conversational changes produce a fresh reviewable draft. Approval saves only in this browser, separately from the full workspace. Passing time never completes a Notion task.
+
+Validation: unit tests cover selected/checked/deferred items, unknown keys, capacity, protected events and missing context. Browser checks cover the sample conversation, timetable, approval, reload, mobile width and unavailable-AI recovery. Real installed-model checks exercised multi-turn events, other wants, work-window extraction and event corrections. They also exposed inconsistent extraction and token-repetition aborts in the installed small model. Guards reject malformed answers and ungrounded times while retaining the previous plan and user draft; model reliability remains an open validation item. These are bounded checks, not proof of every possible model response or launch readiness. Browser-model inference and live hosted Notion OAuth still require separate end-to-end validation.

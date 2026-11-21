@@ -1,4 +1,5 @@
 import {z} from "zod";
+import {notionDayContextSchema} from "./notion-day-model";
 import {dateKey,dayAt,addDays,occurrences,type PlanningState} from "./scheduling";
 import {taskInputSchema,type Task,type TaskInput} from "./types";
 import type {EventDraft} from "./planning-conversation";
@@ -6,10 +7,10 @@ import {satSummary,type SatState} from './sat';
 const clock=z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const modelTask=z.object({title:z.string().trim().min(1).max(200),subject:z.string().trim().min(1).max(80),minutes:z.number().int().min(5).max(1440),priority:z.enum(["high","medium","low"]),energy:z.enum(["high","medium","low"]).nullable(),dueDate:z.iso.date().nullable(),dueTime:clock.nullable()}).strict();
 const modelEvent=z.object({title:z.string().trim().min(1).max(100),date:z.iso.date(),start:z.union([clock,z.literal("")]),end:z.union([clock,z.literal("")])}).strict();
-export const modelReplySchema=z.object({reply:z.string().trim().min(1).max(4000),kind:z.enum(["none","capture","progress","edit","replan"]),tasks:z.array(modelTask).max(20),events:z.array(modelEvent).max(15),progress:z.array(z.object({taskId:z.string().min(1).max(100),response:z.enum(["Done","Making progress","Need more time","Stuck","Skip for now"]),minutes:z.number().int().min(0).max(480)}).strict()).max(1),edits:z.array(z.object({taskId:z.string().min(1).max(100),field:z.enum(["title","subject","remaining_minutes","deadline","priority","energy_level"]),value:z.string().max(200)}).strict()).max(10)}).strict();
+export const modelReplySchema=z.object({dailyContext:notionDayContextSchema.optional(),reply:z.string().trim().min(1).max(4000),kind:z.enum(["none","capture","progress","edit","replan"]),tasks:z.array(modelTask).max(20),events:z.array(modelEvent).max(15),progress:z.array(z.object({taskId:z.string().min(1).max(100),response:z.enum(["Done","Making progress","Need more time","Stuck","Skip for now"]),minutes:z.number().int().min(0).max(480)}).strict()).max(1),edits:z.array(z.object({taskId:z.string().min(1).max(100),field:z.enum(["title","subject","remaining_minutes","deadline","priority","energy_level"]),value:z.string().max(200)}).strict()).max(10)}).strict();
 export type ModelReply=z.infer<typeof modelReplySchema>;
 export interface ReviewedTaskEdit{taskId:string;before:TaskInput;after:TaskInput}
-export const brainRequestSchema=z.object({messages:z.array(z.object({role:z.enum(["user","assistant"]),content:z.string().max(5000)}).strict()).min(1).max(14),context:z.string().max(28000),localModel:z.string().trim().min(1).max(160).optional(),persona:z.object({name:z.string().max(24),tone:z.enum(["calm","direct","encouraging"])}).strict()}).strict();
+export const brainRequestSchema=z.object({mode:z.literal("notion_day").optional(),messages:z.array(z.object({role:z.enum(["user","assistant"]),content:z.string().max(5000)}).strict()).min(1).max(14),context:z.string().max(28000),localModel:z.string().trim().min(1).max(160).optional(),persona:z.object({name:z.string().max(24),tone:z.enum(["calm","direct","encouraging"])}).strict()}).strict();
 export type BrainRequest=z.infer<typeof brainRequestSchema>;
 export function brainContext(tasks:Task[],state:PlanningState|null,drafts:TaskInput[],events:EventDraft[],now=new Date(),edits:ReviewedTaskEdit[]=[],query="",sat:SatState|null=null){
  const from=dayAt(now),to=addDays(from,7),active=tasks.filter(t=>t.status!=="done");

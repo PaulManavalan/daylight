@@ -14,8 +14,8 @@ export function readRunningList(page:string,title:string,blocks:unknown[],readAt
   const block=object(raw),type=String(block.type??''),body=object(block[type]),runs=Array.isArray(body.rich_text)?body.rich_text:[],text=richText(runs),trimmed=text.trim();
   if(block.has_children)nested=true;if(!trimmed)continue;
   if(/^(?:plan for (?:this|the) week|weekly plan)\b/i.test(trimmed)){weekly=true;continue;}
-  if(weekly){weeklyNotes.push(trimmed);continue;}
   if(/^daylight (?:plan|check-ins|export)\b/i.test(trimmed))break;
+  if(weekly){weeklyNotes.push(trimmed);continue;}
   if(/^heading_[123]$/.test(type)){subject=trimmed;continue;}
   if(!['paragraph','to_do','bulleted_list_item','numbered_list_item'].includes(type))continue;
   const heading=type==='paragraph'?trimmed.match(/^([\p{L}][\p{L}\p{N} &/.'()_-]{0,79}):\s*$/u):null;

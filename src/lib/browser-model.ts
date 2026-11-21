@@ -1,6 +1,7 @@
 import type {MLCEngineInterface} from "@mlc-ai/web-llm";
 import {dialogueSchema,proposalSchema,combineModelStages,modelResponseFormat,type BrainRequest} from "./assistant-brain";
 import {modelMessages,isPlanExplanation,isExploratoryConversation,isExplicitNewTask,needsProgressClarification} from "./model-messages";
+import {notionDayMessages,notionDayReplySchema,notionDayModelReply,notionDayConversationMessages,notionDayTextSchema} from "./notion-day-model";
 export const browserModelId="Qwen2.5-1.5B-Instruct-q4f16_1-MLC";
 export function browserModelLoadMessage(cause:unknown){
  const reason=cause instanceof Error?cause.message:typeof cause==='string'?cause:'';
@@ -28,6 +29,15 @@ export class BrowserModel{
  const failed=new Promise<never>((_,reject)=>{crash=()=>{this.engine=null;this.worker=null;worker?.terminate();const error=new Error('Browser chat stopped unexpectedly. Enable it again to reconnect. Your message is kept.');error.name='BrowserModelUnavailable';reject(error);};worker?.addEventListener('error',crash,{once:true});});
  try{
  async function generate(kind?:"none"|"capture"|"progress"|"edit"|"replan",routing=false){const response=await Promise.race([engine.chat.completions.create({messages:modelMessages(request,true,kind,routing),temperature:0,max_tokens:routing?60:1000,response_format:{type:"json_object",schema:JSON.stringify(modelResponseFormat(routing?dialogueSchema:proposalSchema(kind ?? "none")))}}),stopped,failed]);if(signal.aborted)throw new Error("AI request stopped.");if(response.choices[0]?.finish_reason==="length")throw new Error("The browser model ran out of room. Try fewer changes.");return JSON.parse(response.choices[0]?.message.content ?? "");}
+ if(request.mode==='notion_day'){
+  const response=await Promise.race([engine.chat.completions.create({messages:notionDayMessages(request,true),temperature:0,max_tokens:1300,response_format:{type:'json_object',schema:JSON.stringify(modelResponseFormat(notionDayReplySchema))}}),stopped,failed]);
+  if(signal.aborted)throw new Error('Chat request stopped.');if(response.choices[0]?.finish_reason==='length')throw new Error('The browser model ran out of room. Your message is kept.');
+  const checked=notionDayModelReply({...JSON.parse(response.choices[0]?.message.content??''),reply:'Preparing a response.'},request).dailyContext;
+  const textResponse=await Promise.race([engine.chat.completions.create({messages:notionDayConversationMessages(request,checked),temperature:0,max_tokens:500,response_format:{type:'json_object',schema:JSON.stringify(modelResponseFormat(notionDayTextSchema))}}),stopped,failed]);
+  if(signal.aborted)throw new Error('Chat request stopped.');if(textResponse.choices[0]?.finish_reason==='length')throw new Error('The browser model ran out of room. Your message is kept.');
+  const text=notionDayTextSchema.parse(JSON.parse(textResponse.choices[0]?.message.content??''));
+  return notionDayModelReply({...text,dailyContext:checked},request);
+ }
  const dialogue=(isPlanExplanation(request)||isExploratoryConversation(request)||needsProgressClarification(request))?{kind:"none" as const}:isExplicitNewTask(request)?{kind:'capture' as const}:dialogueSchema.parse(await generate(undefined,true));const proposal=await generate(dialogue.kind);return combineModelStages(dialogue,proposal);
  }finally{signal.removeEventListener("abort",stop);worker?.removeEventListener('error',crash);}}
 

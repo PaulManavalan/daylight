@@ -1,0 +1,2 @@
+import {z} from 'zod';
+export const runningSourceSchema=z.object({pageId:z.string().max(100),title:z.string().max(300),readAt:z.iso.datetime(),items:z.array(z.object({key:z.string().max(300),title:z.string().max(1000),subject:z.string().max(100).nullable(),sourceUrl:z.string().url(),yellowHighlighted:z.boolean(),completion:z.enum(['checked','unchecked','not_specified'])})).max(500),weeklyNotes:z.array(z.string().max(4000)).max(300),warnings:z.array(z.string().max(1000)).max(20)});

@@ -18,6 +18,7 @@ test('standalone tasks stay visible and untimed weekly notes do not become appoi
  const source=readRunningList(page,'List',[block([span('Plan week')]),block([span('PLAN FOR THIS WEEK:')]),block([span('Saturday:\nPractice\nHomework')])]);
  assert.equal(source.items[0].title,'Plan week');assert.equal(source.items[0].subject,null);assert.deepEqual(source.weeklyNotes,['Saturday:\nPractice\nHomework']);assert.equal('fixed' in source,false);
 });
+test('an appended Daylight export is excluded even after the weekly notes section',()=>{const source=readRunningList(page,'List',[block([span('Math: Worksheet')]),block([span('PLAN FOR THIS WEEK:')]),block([span('Monday school')]),block([span('Daylight plan')]),block([span('Generated schedule')])]);assert.deepEqual(source.weeklyNotes,['Monday school']);assert.equal(source.items.length,1);});
 test('explicit checklist state stays distinct from a plain paragraph with no completion information',()=>{
  const source=readRunningList(page,'List',[block([span('Read')]),block([span('Read')],'to_do',{checked:false}),block([span('Read')],'to_do',{checked:true})]);assert.deepEqual(source.items.map(item=>item.completion),['not_specified','unchecked','checked']);
 });

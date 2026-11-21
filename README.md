@@ -153,3 +153,10 @@ After the server production build, run `node tests/local-api.cjs` for the HTTP o
 ### Readable daily timetable
 
 The home plan shows actual start/end times, durations, day sections, separate focus/protected/recovery cards, current-block time remaining and an overnight end-day label. All times come from the existing deterministic planner; elapsed block time does not imply completed work. Run `node tests/day-plan-browser.cjs` for the schedule/display integration and `node tests/chat-connection-browser.cjs` for the exact reported intake-escape and model-reconnection regression.
+
+
+### Morning and evening check-ins
+
+Use **Morning check-in** or **Evening check-in** beside the chat composer, then write in your own words. Review/edit the note and choose **Save check-in**, or approve the latest review in chat. This works without an AI connection. Saved notes appear under **Recent check-ins**, can be removed after confirmation, and are included in the workspace backup. The last 60 notes are retained in this browser per workspace; recent bounded excerpts are shared with your selected chat model. Saved notes never mark tasks done or silently change the timetable.
+
+An unsaved note survives a same-day reload in the same tab; a proposal left open across midnight needs a fresh check-in. Existing chat messages and downloaded backups retain their separate copies when a saved entry is removed. There is no cloud note sync or scheduled morning generation. Run `node tests/daily-checkin-browser.cjs` after a production build. `node tests/daily-checkin-model-eval.cjs` optionally checks recall with an already-installed local model and synthetic notes.

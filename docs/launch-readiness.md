@@ -25,10 +25,10 @@ Also confirmed November 19: **no paid model/API costs for now**; use existing lo
 | News | Product requirements recorded | Reliable linked sources, refresh timestamps, source-failure states and clear reporting versus analysis |
 | Catholic readings | Default explicitly confirmed as daily Mass readings | Authorized source links/references, dates/timezones, optional reflections and reading progress |
 | Morning briefing | Today shows a plan/timeline | Unified relevant content and genuinely verified pre-wake background generation; opening the page alone is not background automation |
-| Morning/evening check-ins | Task-progress check-ins exist | Adaptable sleep/energy/recovery/priorities/outcomes conversations with durable confirmed records |
+| Morning/evening check-ins | Reviewed free-text notes, same-day draft recovery, bounded history/removal, backups and dated model context implemented | Broader adaptive sleep/energy/training guidance and confirmed personal preferences remain future work |
 | iPhone | Responsive web styles exist | Confirm web-installable versus native requirement; test the chosen experience on an actual iPhone |
 | Dependencies | Next.js updated to 16.4.6; production audit reports zero known advisories; both production builds pass | Recheck dependencies and deployed build before release |
-| Release quality | 138 unit tests, both builds, browser workflows and bounded live-model checks pass | Complete browser/mobile/accessibility checks, failed-service recovery and deployment verification; publish known limitations accurately |
+| Release quality | 144 unit tests, both builds, browser workflows and bounded live-model checks pass | Complete browser/mobile/accessibility checks, failed-service recovery and deployment verification; publish known limitations accurately |
 
 ## Implementation order
 
@@ -42,6 +42,12 @@ No gate is satisfied by a placeholder, mock transport, test count alone, success
 
 ## Verification checkpoint
 
+November 21 roadmap increment: morning/evening notes can be written in the existing chat composer, reviewed/edited, explicitly approved, reloaded the same day, or discarded. The last 60 saved entries are retained per workspace in planning state and included in its backup/restore; recent bounded excerpts reach the selected model. Removal checks the reviewed entry and requires a second explicit UI action. Notes do not infer task completion, change capacity, or modify commitments. Existing chat and downloaded backup copies remain separate. This is manual journaling and conversational context, not pre-wake automation, full health tracking or cross-device sync.
+
+The new browser suite verifies disconnected save, edit/approval, reload recovery, quota failure/retry, repeated submission, literal text rendering, question-safe confirmation, midnight rollover, removal/cancel, preserved tasks and mobile width. All 144 unit tests pass. An installed Gemma check-in recap test initially routed to capture; recap/read-back requests now stay read-only and the actual inference test passes. Assistant proposal date fields now share strict local-deadline validation, with a browser regression for a nonexistent DST time. Existing full browser workflows passed before the final draft-persistence/removal refinements; affected assistant, check-in, backup and hosted-boundary suites pass afterward. Both final production builds pass.
+
+All three user-supplied daylightv50 domains failed DNS resolution in isolated Edge on November 21. GitHub reports the preceding daylightv50 deployment successful, but this is not a live-site acceptance pass. The failed separate daylight project still needs Vercel account/log access. No real user records, account sign-in, paid usage or new model downloads were involved.
+
 November 20 reliability pass: Vercel operation is an explicit acceptance requirement alongside localhost. The recorded daylightv50.vercel.app address currently times out from this environment; GitHub reports three successful Vercel project builds and one failed older project build for the preceding commit. These statuses do not verify the active public domain. Vercel account access is needed to identify the canonical domain and inspect the failed deployment. Do not label the hosted release verified from a build status alone.
 
 The full browser matrix passes: task CRUD, assistant intake, model-transport interaction, chat connection recovery, backup, SAT, timetable, visual/reduced-motion checks, twelve adversarial storage/concurrency/GPU/offline cases, local origin checks and a VERCEL=1 API boundary check. Storage corruption or blocked access now opens recovery instead of reseeding or exposing a writable empty workspace. Raw recovery exports only workspace keys. Task edits/deletions check the reviewed snapshot; repeated submissions and invalid DST deadlines are rejected. Cloud CAS tests use mocked HTTP, not a real authenticated account.
@@ -50,7 +56,7 @@ Browser AI now remembers an explicit provider choice, exposes loading cancellati
 
 Real installed Gemma tests pass for paragraph capture, saved-task corrections, explanations, short clarifications, hypothetical discussion, ambiguous extra time and the exact request to stop guided intake. An additional live browser test exposed saved assignments copied into a new-task proposal. Capture extraction now omits saved-task names and validation rejects copied or repeated active tasks; the affected live browser flow and proposal regressions pass afterward. Approval creates the requested 25-minute session without a form. This is bounded model evidence, not exhaustive correctness.
 
-The current development pass has **138 passing unit tests**, passing TypeScript, and passing server and static hosted production builds. Next.js was updated to 16.4.6 after a 16.4.3 vulnerability warning; the production dependency audit returned zero known advisories after that update. See the [official security release](https://github.com/vercel/next.js/releases/tag/v16.4.5).
+The current development pass has **144 passing unit tests**, passing TypeScript, and passing server and static hosted production builds. Next.js was updated to 16.4.6 after a 16.4.3 vulnerability warning; the production dependency audit returned zero known advisories after that update. See the [official security release](https://github.com/vercel/next.js/releases/tag/v16.4.5).
 
 Browser checks passed with isolated synthetic records: task CRUD, filters, calendar planning, protected time, adaptive check-ins, assistant identity and persistence, draft corrections, stale-write protection, cancellation, backup preview/restore/recovery, SAT results/error log/targeted scheduling/export/reload, desktop/mobile width, transitions and reduced motion. AI browser transport is mocked to verify the interface independently of inference. Tests launch their own local servers and never stop another Daylight process.
 

@@ -14,6 +14,7 @@ import { taskInputSchema } from "@/lib/types";
 import { DayWorkspace } from "./day-workspace";
 import { PlanningCalendar, type CalendarCommand } from "./planning-calendar";
 import { plan, adaptFromCheckIn, fixedSchema, type Response, type PlanningState } from "@/lib/scheduling";
+import {recordDailyCheckIn,removeDailyCheckIn,type DailyCheckIn} from '@/lib/daily-checkin';
 import {SatWorkspace} from "./sat-workspace";
 import {SatStore,type SatState} from "@/lib/sat";
 import { WorkspaceBackupControl } from "./workspace-backup";
@@ -171,6 +172,18 @@ export function Planner() {
     setTasks([...rows]);navigate("today");
     setCalendarCommand({id:++calendarCommandId.current,action:"conversation_plan"});
   }
+  async function saveDailyCheckIn(entry:DailyCheckIn){
+    if(loadProblem)throw new Error("Recover your workspace before saving a check-in.");
+    const store=new PlanningStore(window.localStorage,user?.id ?? "local-demo"),loaded=store.load();
+    const next=recordDailyCheckIn(loaded.state,entry);store.save(next,loaded.raw);setPlanningExport(next);
+    setCalendarCommand({id:++calendarCommandId.current,action:"conversation_plan"});
+  }
+  async function removeSavedCheckIn(entry:DailyCheckIn){
+    if(loadProblem)throw new Error("Recover your workspace before changing saved check-ins.");
+    const store=new PlanningStore(window.localStorage,user?.id ?? "local-demo"),loaded=store.load();
+    const next=removeDailyCheckIn(loaded.state,entry);store.save(next,loaded.raw);setPlanningExport(next);
+    setCalendarCommand({id:++calendarCommandId.current,action:"conversation_plan"});
+  }
   function checkFromHome(taskId:string){setCalendarCommand({id:++calendarCommandId.current,action:"check_in",taskId});}
   async function progressFromConversation(taskId:string,response:Response,minutes:number){
     const current=epoch.current,store=new PlanningStore(window.localStorage,user?.id ?? "local-demo");
@@ -227,7 +240,7 @@ export function Planner() {
       {view==="today" && error && !loadProblem && <div role="alert" className="error-banner">{error}<button onClick={()=>void reload()}>Retry loading</button></div>}
       {view==="today" && (loading || !authReady) && <div className="day-loading" role="status"><Loader2 className="animate-spin" size={20}/>Opening your day…</div>}
 
-      {authReady && !loading && !loadProblem && <div hidden={view!=="today"}><DayWorkspace tasks={tasks} planning={planningExport} now={now} onCalendar={()=>navigate("calendar")} onPlan={()=>buildFromConversation([],[])} onCheck={checkFromHome} onEdit={task=>setEditor({task})}><PlanningAssistant sat={satContext} key={user?.id ?? "local-demo"} owner={user?.id ?? "local-demo"} onProgress={progressFromConversation} onPreferences={()=>setPreferencesOpen(true)} subjects={subjects} tasks={tasks} planning={planningExport} onBuild={buildFromConversation}/></DayWorkspace></div>}
+      {authReady && !loading && !loadProblem && <div hidden={view!=="today"}><DayWorkspace tasks={tasks} planning={planningExport} now={now} onCalendar={()=>navigate("calendar")} onPlan={()=>buildFromConversation([],[])} onCheck={checkFromHome} onEdit={task=>setEditor({task})}><PlanningAssistant onRemoveCheckIn={removeSavedCheckIn} onDailyCheckIn={saveDailyCheckIn} sat={satContext} key={user?.id ?? "local-demo"} owner={user?.id ?? "local-demo"} onProgress={progressFromConversation} onPreferences={()=>setPreferencesOpen(true)} subjects={subjects} tasks={tasks} planning={planningExport} onBuild={buildFromConversation}/></DayWorkspace></div>}
       <div hidden={loadProblem || view === "calendar" || view==="today" || view==="sat"}><div hidden={view==="done"}><QuickCapture key={user?.id ?? "local-demo"} subjects={subjects} defaultSubject={subject==="all"?"Personal":subject} disabled={loading || loadProblem} onSave={save}/></div><section className="stats-grid" aria-label="Task overview"><div className="stat-card"><div><span className="stat-label">Open tasks</span><div className="stat-number">{incomplete.length}<span>tasks</span></div><p>Tasks still to finish</p></div><span className="stat-icon green"><ListTodo size={21} /></span></div>
         <div className="stat-card"><div><span className="stat-label">Due today</span><div className="stat-number">{dueToday}<span>{dueToday === 1 ? "task" : "tasks"}</span></div><p>{dueToday ? "Scheduled deadlines today" : "No deadlines today"}</p></div><span className="stat-icon peach"><Sun size={22} /></span></div>
         <div className="stat-card"><div><span className="stat-label">Work remaining</span><div className="stat-number time-number">{formatMinutes(incomplete.reduce((sum, t) => sum + t.remaining_minutes, 0))}</div><p>Estimated work remaining</p></div><span className="stat-icon purple"><Clock3 size={21} /></span></div>

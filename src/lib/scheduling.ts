@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Task } from "./types";
+import {dailyCheckInSchema} from './daily-checkin';
 
 const clock = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 export const preferencesSchema = z.object({
@@ -36,6 +37,7 @@ export const planningSchema = z.object({
   preferences: preferencesSchema, fixed: z.array(fixedSchema), sessions: z.array(sessionSchema),
   history: z.array(progressCheckSchema),
   work_records: z.array(progressCheckSchema).optional(),
+  daily_checkins:z.array(dailyCheckInSchema).max(60).refine(rows=>new Set(rows.map(row=>row.id)).size===rows.length,"Check-in IDs must be unique.").optional(),
 });
 export type PlanningState = z.infer<typeof planningSchema>;
 /** The visible history is capped; recent focus credits must not disappear with it. */

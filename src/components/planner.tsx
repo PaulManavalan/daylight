@@ -19,6 +19,7 @@ import {SatWorkspace} from "./sat-workspace";
 import {SatStore,type SatState} from "@/lib/sat";
 import { WorkspaceBackupControl } from "./workspace-backup";
 import {rawWorkspaceRecovery} from '@/lib/workspace-backup';
+import {NotionPanel} from './notion-panel';
 import { AuthDialog } from "./auth-dialog";
 import { cloudRepository, localRepository } from "@/lib/repository";
 import { getSupabase } from "@/lib/supabase";
@@ -59,6 +60,7 @@ export function Planner() {
   const [deleting, setDeleting] = useState<Task | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
+  const [notionOpen,setNotionOpen]=useState(false);
   const [info, setInfo] = useState<"help" | null>(null);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const calendarCommandId=useRef(0);
@@ -71,6 +73,7 @@ export function Planner() {
   const identity = useRef<string | null>(null);
   const repository = useMemo(() => user ? cloudRepository(user.id) : localRepository(), [user]);
 
+  useEffect(()=>{if(!authReady)return;const url=new URL(window.location.href),result=url.searchParams.get('notion');if(result){setNotionOpen(true);setNotice(result==='connected'?'Notion connected. Choose what to import or save.':'Notion sign-in did not finish. You can try connecting again.');url.searchParams.delete('notion');window.history.replaceState(null,'',url.pathname+url.search+url.hash);}},[authReady]);
   useEffect(() => {
     setNow(new Date());
     const timer = setInterval(() => setNow(new Date()), 60000);
@@ -81,7 +84,7 @@ export function Planner() {
       if (alive) {
         const nextId = session?.user.id ?? null;
         if (identity.current !== nextId) {
-          identity.current = nextId; epoch.current++; setTasks([]); setCalendarCommand(null); setPlanningExport(null);setSatContext(null); setPreferencesOpen(false); setEditor(null); setDeleting(null); setNotice("");
+          identity.current = nextId; epoch.current++; setTasks([]); setCalendarCommand(null); setPlanningExport(null);setSatContext(null); setPreferencesOpen(false); setNotionOpen(false); setEditor(null); setDeleting(null); setNotice("");
           setUser(session?.user ?? null);
         }
         setAuthReady(true); if (session) setAuthOpen(false);
@@ -114,6 +117,18 @@ export function Planner() {
     return sortTasks(filterTasks(base, { search, subject, status, deadline: view === "today" ? "today" : deadline }, now ?? new Date()), sort);
   }, [tasks, view, search, subject, status, deadline, sort, now]);
 
+  async function importNotionTasks(inputs:TaskInput[]){
+    if(loadProblem)throw new Error("Recover your saved workspace before importing tasks.");
+    if(taskOperation.current)throw new Error("Another task change is being saved. Try again in a moment.");
+    taskOperation.current=true;const current=epoch.current;let added=0;
+    try{const validated=inputs.map(input=>taskInputSchema.parse(input)),rows=await repository.list();
+      for(const input of validated){if(current!==epoch.current)throw new Error("The workspace changed. Review the original workspace before retrying.");
+        const marker=input.description.match(/\[Daylight Notion: [^\]\r\n]+\]/)?.[0];if(!marker)throw new Error("This import is missing its Notion source. Read the source again.");
+        if(rows.some(row=>row.description.includes(marker)))continue;
+        const saved=await repository.save(input);if(current!==epoch.current)throw new Error("The workspace changed while importing. Review the original workspace before retrying.");rows.push(saved);added++;setTasks([...rows]);
+      }return added;
+    }catch(e){throw new Error((e instanceof Error?e.message:"Import could not finish.")+" Any tasks already saved are kept; retrying skips matching imports.");}finally{taskOperation.current=false;}
+  }
   async function save(input: TaskInput, id?: string,expected?:Task) {
     if(loadProblem)throw new Error('Open your saved workspace before making changes.');
     const current = epoch.current;
@@ -231,7 +246,7 @@ export function Planner() {
       </div>
     </aside>
 
-    <div className="main-shell"><header className="topbar"><div className="flex items-center gap-2 text-xs text-muted-foreground"><span>My workspace</span><ChevronRight size={13} /><span className="text-foreground">{viewNames[view]}</span></div><div className="flex items-center gap-4"><span className="hidden sm:block text-xs text-muted-foreground">{now?.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) ?? "Your workspace"}</span><span className="topbar-divider" />{!user && <WorkspaceBackupControl key="local-backup" disabled={loading || !authReady} onExport={exportTasks} readable={!loadProblem}/>}<button className="text-muted-foreground hover:text-primary" aria-label="About Daylight" onClick={() => setInfo("help")}><CircleHelp size={17} /></button></div></header>
+    <div className="main-shell"><header className="topbar"><div className="flex items-center gap-2 text-xs text-muted-foreground"><span>My workspace</span><ChevronRight size={13} /><span className="text-foreground">{viewNames[view]}</span></div><div className="flex items-center gap-4"><span className="hidden sm:block text-xs text-muted-foreground">{now?.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) ?? "Your workspace"}</span><span className="topbar-divider" /><button className="notion-open" aria-label="Notion" title="Notion" disabled={loading || !authReady || loadProblem} onClick={()=>setNotionOpen(true)}><span aria-hidden="true">N</span><span className="hidden sm:inline">Notion</span></button>{!user && <WorkspaceBackupControl key="local-backup" disabled={loading || !authReady} onExport={exportTasks} readable={!loadProblem}/>}<button className="text-muted-foreground hover:text-primary" aria-label="About Daylight" onClick={() => setInfo("help")}><CircleHelp size={17} /></button></div></header>
     <main ref={contentRef} className="main-content">
       {loadProblem && <section className="workspace-recovery"><h2>Your workspace needs recovery</h2><p role="alert">{error}</p><p>Existing records are kept as they are. You can download a recovery file or restore a saved backup from Backups above.</p><div className="flex flex-wrap gap-3"><Button variant="outline" onClick={()=>void reload()}>Retry loading</Button>{!user && <Button onClick={downloadRecovery}><Download size={15}/>Download recovery file</Button>}</div></section>}
       {loadProblem?null:view==="today"?<header className="day-hero"><div><span className="section-overline">{now?.toLocaleDateString([],{weekday:"long",month:"long",day:"numeric"})}</span><h1>Today</h1><p>{loading?"Opening your workspace…":incomplete.length?`${dueToday} due today · ${incomplete.length} open ${incomplete.length===1?"task":"tasks"}`:"No open tasks. Add something whenever you need to."}</p></div></header>:<>      <div className="page-heading"><div><div className="eyebrow"><span className="size-1.5 rounded-full bg-primary" /> YOUR WORKSPACE</div><h1>{viewNames[view]}<span className="heading-dot">.</span></h1><p>{view === "sat" ? `Your ${satContext?.goal ?? 1550} goal, one focused practice session at a time.` : view === "done" ? "Your completed tasks." : view === "inbox" ? "Tasks you haven’t started." : "View, edit, and organize your tasks."}</p></div><Button hidden={view==="sat"} onClick={() => setEditor({ task: null })} disabled={loading || loadProblem} className={view==="sat"?"hidden":"add-button"} aria-label="Add task"><Plus size={16} />Add task<span className="key-hint" aria-hidden="true">+</span></Button></div></>}
@@ -276,6 +291,7 @@ export function Planner() {
     </main></div>
 
     {editor && <TaskEditor key={editor.task?.id ?? "new"} task={editor.task} open onClose={() => setEditor(null)} onSave={save} subjects={subjects} />}
+    {notionOpen && authReady && <NotionPanel key={user?.id ?? "local-demo"} open owner={user?.id ?? "local-demo"} onClose={()=>setNotionOpen(false)} tasks={tasks} planning={planningExport} onImport={importNotionTasks}/>}
     <AuthDialog open={authOpen} onClose={() => setAuthOpen(false)} />
     <Dialog open={Boolean(deleting)} onOpenChange={value => { if (!value && !pending) setDeleting(null); }}><DialogContent><DialogTitle className="text-xl font-semibold">Delete this task?</DialogTitle><DialogDescription className="mt-3 text-sm text-muted-foreground">“{deleting?.title}” will be removed from your task list. This can’t be undone.</DialogDescription>{error && <p role="alert" className="form-error mt-4">{error}</p>}<div className="mt-6 flex justify-end gap-2"><Button variant="ghost" onClick={() => setDeleting(null)} disabled={Boolean(pending)}>Keep task</Button><Button className="bg-red-700 hover:bg-red-800" onClick={() => void remove()} disabled={Boolean(pending)}>{pending ? "Deleting…" : "Delete task"}</Button></div></DialogContent></Dialog>
     <Dialog open={Boolean(info)} onOpenChange={value => { if (!value) setInfo(null); }}><DialogContent><DialogTitle className="text-xl font-semibold">Welcome to Daylight.</DialogTitle><DialogDescription className="mt-3 text-sm leading-6 text-muted-foreground">Start with the conversation on Your day. Share homework and commitments, review the details, and let Daylight build your day. Return to the assistant when you finish, need more time, or feel stuck. Calendar and All tasks give you direct control when you need it. The planner respects deadlines and tells you when work cannot fit. Tasks, plans, and SAT records stay in this browser unless you connect an account for task sync. Workspace exports include tasks, plans, and SAT records; conversations have a separate download.</DialogDescription><Button className="mt-6" onClick={() => setInfo(null)}>Got it</Button></DialogContent></Dialog>

@@ -163,3 +163,28 @@ An unsaved note survives a same-day reload in the same tab; a proposal left open
 
 
 The optional real WebGPU check is `tests/browser-model-live.cjs`. It uses an isolated persistent test profile and the running app at http://127.0.0.1:3102, blocks local-model API requests, and can download roughly 1 GB. Obtain approval first; set `DAYLIGHT_ALLOW_MODEL_DOWNLOAD=1` explicitly to run it. A failed CDN download is not a successful browser-inference result. Browser AI needs reachable model files as well as WebGPU; partial cached files can be reused after a failed download.
+### Notion connection
+
+Open **Notion** in Daylight's top bar to import work or save a reviewed snapshot. This uses Daylight's own OAuth connection; it requires the running Next.js server (including Vercel), not the static `out/` copy.
+
+One-time owner setup:
+
+1. Open the [Notion developer portal](https://app.notion.com/developers/connections) and create an **OAuth connection** for Daylight (a public integration uses the same flow). Enable read-content and insert-content capabilities. A Marketplace listing is not required for authorization.
+2. Register this production redirect URI exactly: `https://daylightv50.vercel.app/api/notion/callback`. To connect the local app too, also register `http://127.0.0.1:3102/api/notion/callback`.
+3. Set these **server-only** environment variables on the deployment: `NOTION_CLIENT_ID`, `NOTION_CLIENT_SECRET`, `NOTION_REDIRECT_URI`, and `NOTION_COOKIE_SECRET`. Use the production URI on Vercel; use the matching local URI in `.env.local` for localhost. Never use `NEXT_PUBLIC_` for these values, commit real secrets, or paste them into chat.
+4. Generate the cookie secret with `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"` in your own terminal and put the result directly into the environment setting. Keep the key stable across instances of the same deployment. Changing it invalidates that deployment's existing Notion connections.
+5. Redeploy/restart, choose **Connect Notion**, and select the existing pages Daylight may access. Include both the task source and the page where you want to save plans/check-ins.
+
+Only the configured primary origin may start or change a connection. A Vercel preview alias or a different localhost port needs a separately configured, registered redirect URI; it cannot silently reuse another origin's authorization.
+
+**Import:** search shared pages/tables or paste a Notion link. Regular pages support checklist/list items and subject lists such as `Math: Worksheet, Review for quiz`; a weekly-plan section is excluded. Databases support task titles, explicit subject/course/class fields, minute-based estimates and due/deadline date properties. Completed items are excluded. Confirm missing estimates, review date-only deadlines at 11:59 PM local time, then import the selected items. Source markers prevent repeat imports, including retries after partial local saves. Similar active title/subject matches start unselected for review; you may explicitly import one if it represents different work. Database page IDs remain stable across source renames. Imports do not modify Notion or automatically update existing Daylight tasks.
+
+**Save:** choose an existing destination page and review either today's timetable (focus, protected time and recovery) or up to ten recent saved check-ins. **Save this to Notion** appends the exact reviewed section, rereads the destination and verifies its marker. A retry of that same export checks for the prior marker before writing again. Nothing is sent by merely opening a preview. This is manual transfer, not automatic two-way sync or an exactly-once distributed transaction. Concurrent independent clients or a manually removed export marker can defeat duplicate protection.
+
+Access/refresh tokens are encrypted in HttpOnly, SameSite cookies scoped to `/api/notion`, with a 30-day Daylight connection lifetime. They are not placed in localStorage, transcripts, model context or workspace exports. Signed-in Daylight owners are verified through Supabase before matching the connection; local mode is a separate owner. Token refresh updates the encrypted cookie. **Disconnect this browser** clears its connection cookies; revoke the connection in Notion itself to remove its workspace access everywhere.
+
+Reads are bounded: a regular source page reads up to 300 top-level blocks and shows up to 200 candidates; nested blocks are explicitly reported as omitted. Database queries load 100 rows per requested batch (up to 500 rows in the review screen). Exports use up to 40 timetable entries and 20 due-task reminders; destinations over 300 top-level blocks require a shorter page so the save can be verified within the request budget. These limits are not full-workspace synchronization.
+
+Validation: `tests/notion.test.ts` and `tests/notion-api.test.ts` cover parsing, provenance, encryption/tampering, ownership, CSRF/state expiry, refresh, body limits and verified retry behavior. After a build, `node tests/notion-browser.cjs` exercises the workflow with synthetic records and mocked Notion transport. A real OAuth sign-in and real read/write verification against the selected pages are still required after configuring the app credentials.
+
+References: [Notion OAuth authorization](https://developers.notion.com/guides/authorization/overview), [query data sources](https://developers.notion.com/reference/query-a-data-source), [append blocks](https://developers.notion.com/reference/patch-block-children).

@@ -2,7 +2,7 @@ import {NextRequest,NextResponse} from 'next/server';
 import {randomBytes} from 'node:crypto';
 import {ZodError} from 'zod';
 import {NOTION_COOKIE,NOTION_STATE_COOKIE,NotionClient,NotionError,boundedJSON,notionConfig,notionCookieOptions,notionOwner,readNotionSession,requireNotionOrigin,sealNotion} from '@/lib/notion-server';
-import {notionActionSchema,notionPreview,notionSave,notionSearch} from '@/lib/notion-operations';
+import {notionActionSchema,notionPreview,notionRunningList,notionSave,notionSearch} from '@/lib/notion-operations';
 export const runtime='nodejs';export const dynamic='force-dynamic';export const maxDuration=60;
 const headers={'Cache-Control':'no-store','Referrer-Policy':'no-referrer'};
 function failure(error:unknown){return NextResponse.json({error:error instanceof ZodError?'This Notion request is incomplete or invalid. Nothing new was requested.':error instanceof NotionError?error.message:'The Notion request could not finish. Check the destination before retrying a save.'},{status:error instanceof NotionError?error.status:400,headers});}
@@ -20,7 +20,7 @@ export async function POST(request:NextRequest){
  if(body.op==='connect'){const nonce=randomBytes(32).toString('base64url'),url=new URL('https://api.notion.com/v1/oauth/authorize');url.search=new URLSearchParams({client_id:config.clientId,redirect_uri:config.redirectUri,response_type:'code',owner:'user',state:nonce}).toString();const response=NextResponse.json({url:url.href},{headers});response.cookies.set(NOTION_STATE_COOKIE,sealNotion({kind:'state',owner,nonce,expires:Date.now()+600000},config.cookieSecret),notionCookieOptions(config,600));return response;}
  const session=readNotionSession(request.cookies.get(NOTION_COOKIE)?.value,config,owner);if(!session)throw new NotionError('Connect Notion in this Daylight workspace first.',401);
  if(body.op==='disconnect'){const response=NextResponse.json({connected:false},{headers});response.cookies.set(NOTION_COOKIE,'',notionCookieOptions(config,0));response.cookies.set(NOTION_STATE_COOKIE,'',notionCookieOptions(config,0));return response;}
- client=new NotionClient(session,config);const result=body.op==='search'?await notionSearch(client,body.query):body.op==='preview'?await notionPreview(client,body.source,body.kind,body.cursor):await notionSave(client,body.data,config.origin);
+ client=new NotionClient(session,config);const result=body.op==='running-list'?await notionRunningList(client,body.source):body.op==='search'?await notionSearch(client,body.query):body.op==='preview'?await notionPreview(client,body.source,body.kind,body.cursor):await notionSave(client,body.data,config.origin);
  const response=NextResponse.json(result,{headers});if(client.changed)response.cookies.set(NOTION_COOKIE,sealNotion(client.session,config.cookieSecret),notionCookieOptions(config));return response;
  }catch(error){const response=failure(error);if(client?.changed)response.cookies.set(NOTION_COOKIE,sealNotion(client.session,config.cookieSecret),notionCookieOptions(config));return response;}
 }

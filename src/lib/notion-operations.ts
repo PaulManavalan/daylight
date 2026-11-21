@@ -1,6 +1,7 @@
 import {createHash} from 'node:crypto';
 import {z} from 'zod';
 import {NotionClient,NotionError} from './notion-server';
+import {readRunningList} from './notion-daily-source';
 import {databaseCandidates,pageCandidates,notionId,notionUrl,object,resourceTitle,notionExportSchema,type NotionExport,type NotionResource} from './notion-data';
 
 export async function notionSearch(client:NotionClient,query:string){
@@ -10,6 +11,11 @@ export async function notionSearch(client:NotionClient,query:string){
 async function children(client:NotionClient,id:string,max=300){
  const blocks:unknown[]=[];let cursor:string|undefined;
  do{const data=await client.call(`/blocks/${notionId(id)}/children?page_size=100${cursor?'&start_cursor='+encodeURIComponent(cursor):''}`);blocks.push(...(Array.isArray(data.results)?data.results:[]));cursor=data.has_more&&typeof data.next_cursor==='string'?data.next_cursor:undefined;if(blocks.length>=max)return {blocks:blocks.slice(0,max),hasMore:Boolean(cursor)};}while(cursor);return {blocks,hasMore:false};
+}
+export async function notionRunningList(client:NotionClient,source:string){
+ const id=notionId(source),page=await client.call('/pages/'+id);if(page.archived||page.in_trash)throw new NotionError('That running list is in the trash. Choose an available page.');
+ const result=await children(client,id),list=readRunningList(id,resourceTitle(page),result.blocks);
+ if(result.hasMore)list.warnings.push('Only the first 300 top-level blocks were read.');return list;
 }
 export async function notionPreview(client:NotionClient,source:string,kind:'auto'|'page'|'database'|'data_source',cursor?:string){
  const id=notionId(source);let metadata:Record<string,unknown>;
@@ -38,6 +44,7 @@ export async function notionSave(client:NotionClient,raw:unknown,origin:string){
 export const notionActionSchema=z.discriminatedUnion('op',[
  z.object({op:z.literal('connect')}).strict(),z.object({op:z.literal('disconnect')}).strict(),
  z.object({op:z.literal('search'),query:z.string().trim().max(200)}).strict(),
+ z.object({op:z.literal('running-list'),source:z.string().trim().min(1).max(1000)}).strict(),
  z.object({op:z.literal('preview'),source:z.string().trim().min(1).max(1000),kind:z.enum(['auto','page','database','data_source']).default('auto'),cursor:z.uuid().optional()}).strict(),
  z.object({op:z.literal('export'),data:notionExportSchema}).strict(),
 ]);

@@ -32,6 +32,7 @@ const { startBrowserServer } = require("./browser-server.cjs");
       .filter({ hasText: "Saved in this browser" })
       .waitFor();
     await page.goto(server.url + "/day/meals");
+    await page.getByRole("button", { name: "My recipes", exact: true }).click();
     await page.getByText("Add a recipe", { exact: true }).click();
     for (const data of [
       { title: "Family rice bowl", ingredients: "rice\nbeans" },
@@ -46,6 +47,7 @@ const { startBrowserServer } = require("./browser-server.cjs");
         .click();
       await page.getByText(data.title, { exact: true }).waitFor();
     }
+    await page.getByRole("button", { name: "My week", exact: true }).click();
     await page
       .getByRole("button", { name: "Draft from saved recipes", exact: true })
       .click();
@@ -69,6 +71,9 @@ const { startBrowserServer } = require("./browser-server.cjs");
       .getByText("Grocery ingredient checklist", { exact: true })
       .click();
     assert.ok(await page.getByText("beans", { exact: false }).count());
+    await page
+      .getByRole("button", { name: "Food journal", exact: true })
+      .click();
     await page
       .getByLabel("Meal or snack", { exact: true })
       .fill("Family lunch");

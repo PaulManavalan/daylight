@@ -2,6 +2,13 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePersonalWorkspace } from "./use-personal-workspace";
+import MealIdeaBrowser from "./meal-idea-browser";
+import {
+  mealIdeas,
+  combinedMealChoices,
+  suggestMealWeek,
+  swapPlannedMeal,
+} from "@/lib/meal-ideas";
 import {
   draftMealWeek,
   emptyMealPlan,
@@ -12,6 +19,7 @@ import {
   mealPlanSchema,
   mealSlots,
   recipeRestrictions,
+  mealRestrictions,
   recipeSchema,
   weekDates,
   type FoodEntry,
@@ -31,6 +39,10 @@ export default function MealWorkspace() {
     [message, setMessage] = useState(""),
     [error, setError] = useState(""),
     [showNutrition, setShowNutrition] = useState(false);
+  const [view, setView] = useState<"week" | "ideas" | "journal" | "recipes">(
+      "week",
+    ),
+    [maxPrep, setMaxPrep] = useState(60);
   const [activeMealDay, setActiveMealDay] = useState(0);
   const [food, setFood] = useState({
       title: "",
@@ -59,7 +71,20 @@ export default function MealWorkspace() {
     setDay(today);
     setWeek(today);
     setActiveMealDay((new Date().getDay() + 6) % 7);
+    const section = new URLSearchParams(location.search).get("view");
+    if (section && ["week", "ideas", "journal", "recipes"].includes(section))
+      setView(section as typeof view);
   }, []);
+  function changeView(section: typeof view) {
+    setView(section);
+    const url = new URL(location.href);
+    url.searchParams.set("view", section);
+    history.replaceState(
+      history.state,
+      "",
+      url.pathname + url.search + url.hash,
+    );
+  }
   const state = workspace.state,
     nutrition = state?.nutrition,
     weekKey = week ? weekDates(week)[0] : "";
@@ -86,7 +111,30 @@ export default function MealWorkspace() {
       [nutrition, day],
     ),
     summary = foodSummary(entries),
-    groceries = plan && nutrition ? groceryList(plan, nutrition.recipes) : [];
+    groceries =
+      plan && nutrition
+        ? groceryList(plan, [
+            ...nutrition.recipes,
+            ...mealIdeas
+              .map((idea) => idea.recipe)
+              .filter(
+                (recipe) =>
+                  !nutrition.recipes.some(
+                    (saved) =>
+                      saved.title.toLowerCase() === recipe.title.toLowerCase(),
+                  ),
+              ),
+          ])
+        : [];
+  const choices =
+    nutrition && state
+      ? combinedMealChoices(
+          nutrition.recipes,
+          state.food,
+          nutrition.hiddenIdeas,
+          maxPrep,
+        )
+      : [];
   function save(next: NutritionState, success: string) {
     if (!state) return false;
     try {
@@ -254,6 +302,53 @@ export default function MealWorkspace() {
     );
     setError("");
   }
+  function suggestWeek() {
+    if (!nutrition || !state || !week) return;
+    const next = suggestMealWeek(
+      week,
+      nutrition.recipes,
+      state.food,
+      nutrition.hiddenIdeas,
+      maxPrep,
+    );
+    setPlan(next.plan);
+    changeView("week");
+    setMessage(
+      "Here is a draft from your favorites and curated recipe links. Swap anything you do not want, then save. Source yields are not personal portions; some dishes need advance preparation.",
+    );
+    setError("");
+  }
+  function swapMeal(date: string, slot: Slot) {
+    if (!plan || !state) return;
+    const next = swapPlannedMeal(plan, date, slot, choices, state.food);
+    if (!next) {
+      setMessage(
+        "No other matching choice is available. Browse meal ideas, adjust preferences, or type a family favorite.",
+      );
+      return;
+    }
+    setPlan(next);
+    setMessage(
+      "Meal swapped in your draft. Save the week when you are happy with it.",
+    );
+  }
+  function saveIdea(recipe: Recipe) {
+    if (!nutrition) return;
+    if (
+      nutrition.recipes.some(
+        (saved) =>
+          saved.id === recipe.id ||
+          saved.title.toLowerCase() === recipe.title.toLowerCase(),
+      )
+    ) {
+      setMessage("This recipe is already in your collection.");
+      return;
+    }
+    save(
+      { ...nutrition, recipes: [...nutrition.recipes, recipe] },
+      "Recipe saved with its source link and preparation notes.",
+    );
+  }
   function saveWeek() {
     if (!nutrition || !plan) return;
     const parsed = mealPlanSchema.safeParse(plan);
@@ -263,12 +358,33 @@ export default function MealWorkspace() {
       );
       return;
     }
+    const used = new Set(
+        plan.days.flatMap((day) =>
+          mealSlots.map((slot) => day.slots[slot].trim().toLowerCase()),
+        ),
+      ),
+      recipes = [...nutrition.recipes];
+    for (const idea of mealIdeas)
+      if (
+        used.has(idea.recipe.title.toLowerCase()) &&
+        !recipes.some(
+          (recipe) =>
+            recipe.title.toLowerCase() === idea.recipe.title.toLowerCase(),
+        )
+      )
+        recipes.push(idea.recipe);
     save(
       {
         ...nutrition,
+        recipes,
         plans: [
           ...nutrition.plans.filter((p) => p.week !== plan.week),
-          parsed.data,
+          {
+            ...parsed.data,
+            recipeIds: recipes
+              .filter((recipe) => used.has(recipe.title.toLowerCase()))
+              .map((recipe) => recipe.id),
+          },
         ],
       },
       "Weekly meal plan saved. Meals are not marked eaten or added to your calendar.",
@@ -304,11 +420,27 @@ export default function MealWorkspace() {
           <em>for good food.</em>
         </h1>
         <p>
-          Plan meals your family can make, keep the recipes you like, and
-          journal without scores or restrictive targets. Saved only in this
-          browser.
+          Meal ideas, family favorites, weekly menus, and your food
+          journal—together. Saved in this browser.
         </p>
       </section>
+      <nav className={styles.moduleNav} aria-label="Nutrition sections">
+        {(["week", "ideas", "journal", "recipes"] as const).map((section) => (
+          <button
+            key={section}
+            aria-pressed={view === section}
+            onClick={() => changeView(section)}
+          >
+            {section === "week"
+              ? "My week"
+              : section === "ideas"
+                ? "Meal ideas"
+                : section === "journal"
+                  ? "Food journal"
+                  : "My recipes"}
+          </button>
+        ))}
+      </nav>
       {(error || workspace.error) && (
         <p role="alert" className={styles.error}>
           {error || workspace.error}
@@ -319,523 +451,596 @@ export default function MealWorkspace() {
         <p>Loading your meals…</p>
       ) : (
         <>
-          <section className={styles.panel}>
-            <div className={styles.sectionTitle}>
-              <h2>Your week</h2>
-              <span>Editable family meal plan</span>
-            </div>
-            <p className={styles.muted}>
-              Dislikes: {state.food.dislikes.join(", ") || "not yet saved"}.{" "}
-              {state.food.allergyStatus === "unknown"
-                ? "Allergies/restrictions have not been confirmed."
-                : state.food.allergyStatus === "none"
-                  ? "You reported no allergies/restrictions."
-                  : "Listed restrictions: " +
-                    state.food.allergies.join(", ")}{" "}
-              Check ingredients and labels with your family; matching listed
-              ingredients is not an allergen-safety certification.
-            </p>
-            <label>
-              Week containing
-              <input
-                type="date"
-                value={week}
-                onChange={(e) => {
-                  if (e.target.value) {
-                    setWeek(e.target.value);
-                    setPlan(null);
-                  }
-                }}
-              />
-            </label>
-            <button disabled={!nutrition?.recipes.length} onClick={draftWeek}>
-              Draft from saved recipes
-            </button>
-            <p className={styles.muted}>
-              This uses a simple rotation of your own recipes, filtered by
-              listed ingredients and dislikes. It is not AI recipe discovery.
-              Blank slots stay blank when nothing fits.
-            </p>
-            {plan && (
-              <>
-                <div
-                  className={styles.mealDayTabs}
-                  aria-label="Choose meal planning day"
-                >
-                  {plan.days.map((entry, index) => (
-                    <button
-                      key={entry.date}
-                      aria-pressed={activeMealDay === index}
-                      onClick={() => setActiveMealDay(index)}
-                    >
-                      {new Date(entry.date + "T12:00:00").toLocaleDateString(
-                        [],
-                        { weekday: "short" },
-                      )}
-                    </button>
-                  ))}
-                </div>
-                <div className={styles.mealGrid}>
-                  {plan.days.map((day, index) => (
-                    <fieldset
-                      key={day.date}
-                      data-active={activeMealDay === index}
-                    >
-                      <legend>
-                        {new Date(day.date + "T12:00:00").toLocaleDateString(
-                          [],
-                          {
-                            weekday: "short",
-                            month: "short",
-                            day: "numeric",
-                          },
-                        )}
-                      </legend>
-                      {mealSlots.map((slot) => (
-                        <label key={slot}>
-                          {label(slot)}
-                          <input
-                            aria-label={day.date + " " + slot}
-                            maxLength={160}
-                            list="saved-recipe-names"
-                            value={day.slots[slot]}
-                            onChange={(e) =>
-                              updateMeal(index, slot, e.target.value)
-                            }
-                          />
-                        </label>
-                      ))}
-                    </fieldset>
-                  ))}
-                </div>
-              </>
-            )}
-            <datalist id="saved-recipe-names">
-              {nutrition?.recipes.map((r) => (
-                <option key={r.id} value={r.title} />
-              ))}
-            </datalist>
-            <button disabled={!plan} onClick={saveWeek}>
-              Save weekly plan
-            </button>
-            <details>
-              <summary>Grocery ingredient checklist</summary>
-              <p className={styles.muted}>
-                From meals matching saved recipe names. Check amounts and
-                portions for the whole week; quantities are not multiplied or
-                combined. Typed family meals without recipes need their
-                ingredients added separately.
-              </p>
-              {groceries.length ? (
-                <ul>
-                  {groceries.map((row) => (
-                    <li key={row.ingredient}>
-                      {row.ingredient} <small>({row.meals.join(", ")})</small>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p>
-                  Choose saved recipes in your week to build this checklist.
-                </p>
-              )}
-            </details>
-          </section>
-          <div className={`${styles.layout} ${styles.mealSections}`}>
+          {view === "ideas" && (
+            <MealIdeaBrowser
+              food={state.food}
+              hidden={state.nutrition.hiddenIdeas}
+              saved={state.nutrition.recipes}
+              onSave={saveIdea}
+              onHide={(id) =>
+                save(
+                  {
+                    ...state.nutrition,
+                    hiddenIdeas: [
+                      ...new Set([...state.nutrition.hiddenIdeas, id]),
+                    ],
+                  },
+                  "Hidden from future suggestions. Your current meal plan is unchanged.",
+                )
+              }
+              onRestore={() =>
+                save(
+                  { ...state.nutrition, hiddenIdeas: [] },
+                  "Hidden meal ideas restored.",
+                )
+              }
+            />
+          )}
+          {view === "week" && (
             <section className={styles.panel}>
-              <h2>Food journal</h2>
+              <div className={styles.sectionTitle}>
+                <h2>Your week</h2>
+                <span>Editable family meal plan</span>
+              </div>
+              <details>
+                <summary>Preferences used for suggestions</summary>
+                <p className={styles.muted}>
+                  Dislikes: {state.food.dislikes.join(", ") || "not yet saved"}.{" "}
+                  {state.food.ingredientExceptions.length > 0
+                    ? "Okay inside other recipes: " +
+                      state.food.ingredientExceptions.join(", ") +
+                      ". "
+                    : ""}
+                  {state.food.allergyStatus === "unknown"
+                    ? "Allergies/restrictions have not been confirmed."
+                    : state.food.allergyStatus === "none"
+                      ? "You reported no allergies/restrictions."
+                      : "Listed restrictions: " +
+                        state.food.allergies.join(", ")}{" "}
+                  Check ingredients and labels with your family; matching listed
+                  ingredients is not an allergen-safety certification.
+                </p>
+              </details>
               <label>
-                Journal date
+                Week containing
                 <input
                   type="date"
-                  required
-                  value={day}
+                  value={week}
                   onChange={(e) => {
                     if (e.target.value) {
-                      setDay(e.target.value);
-                      setEditing(null);
+                      setWeek(e.target.value);
+                      setPlan(null);
                     }
                   }}
                 />
               </label>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  addFood();
-                }}
-              >
+              <div className={styles.planActions}>
+                <button onClick={suggestWeek}>Suggest my week</button>
+                <button
+                  className={styles.secondary}
+                  onClick={() => changeView("ideas")}
+                >
+                  Explore meal ideas
+                </button>
                 <label>
-                  Meal or snack
-                  <input
-                    required
-                    maxLength={200}
-                    value={food.title}
-                    onChange={(e) =>
-                      setFood({ ...food, title: e.target.value })
-                    }
-                  />
-                </label>
-                <label>
-                  Meal type
+                  Prep + cooking time
                   <select
-                    value={food.slot}
-                    onChange={(e) =>
-                      setFood({ ...food, slot: e.target.value as Slot })
-                    }
+                    value={maxPrep}
+                    onChange={(e) => setMaxPrep(Number(e.target.value))}
                   >
-                    {mealSlots.map((slot) => (
-                      <option key={slot} value={slot}>
-                        {label(slot)}
-                      </option>
-                    ))}
+                    <option value={30}>Up to 30 minutes</option>
+                    <option value={60}>Up to 1 hour</option>
+                    <option value={120}>Up to 2 hours</option>
                   </select>
                 </label>
-                <label>
-                  Portion or serving (optional)
-                  <input
-                    maxLength={120}
-                    value={food.serving}
-                    onChange={(e) =>
-                      setFood({ ...food, serving: e.target.value })
-                    }
-                  />
-                </label>
-                <details>
-                  <summary>
-                    Optional nutrition from a label or trusted source
-                  </summary>
-                  <div className={styles.formGrid}>
-                    <label>
-                      Calories for this entry
-                      <input
-                        type="number"
-                        min={0}
-                        max={10000}
-                        step="any"
-                        value={food.calories}
-                        onChange={(e) =>
-                          setFood({ ...food, calories: e.target.value })
-                        }
-                      />
-                    </label>
-                    <label>
-                      Protein, grams for this entry
-                      <input
-                        type="number"
-                        min={0}
-                        max={500}
-                        step="any"
-                        value={food.protein}
-                        onChange={(e) =>
-                          setFood({ ...food, protein: e.target.value })
-                        }
-                      />
-                    </label>
-                  </div>
-                  <label>
-                    Nutrition source
-                    <input
-                      maxLength={300}
-                      value={food.nutritionSource}
-                      onChange={(e) =>
-                        setFood({ ...food, nutritionSource: e.target.value })
-                      }
-                      placeholder="Package label, recipe page, or your estimate"
-                    />
-                  </label>
-                  <p className={styles.muted}>
-                    Use values for the portion you actually logged. Unknown
-                    values stay unknown.
-                  </p>
-                </details>
-                <label>
-                  Notes (optional)
-                  <input
-                    maxLength={1000}
-                    value={food.note}
-                    onChange={(e) => setFood({ ...food, note: e.target.value })}
-                  />
-                </label>
-                <button>{editing ? "Save food changes" : "Log food"}</button>
-                {editing && (
-                  <button
-                    type="button"
-                    className={styles.secondary}
-                    onClick={() => {
-                      setEditing(null);
-                      setFood({
-                        ...food,
-                        title: "",
-                        serving: "",
-                        calories: "",
-                        protein: "",
-                        nutritionSource: "",
-                        note: "",
-                      });
-                    }}
-                  >
-                    Cancel edit
-                  </button>
-                )}
-              </form>
-              <div className={styles.topicChoices}>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={showNutrition}
-                    onChange={(e) => setShowNutrition(e.target.checked)}
-                  />
-                  Show nutrition information I entered
-                </label>
               </div>
-              {showNutrition && (
-                <p>
-                  {summary.calories.toLocaleString()} recorded calories ·{" "}
-                  {summary.protein.toLocaleString()} g recorded protein.{" "}
-                  {summary.missingCalories} entries have unknown calories and{" "}
-                  {summary.missingProtein} have unknown protein. These are
-                  partial self-reported values, not a daily target or
-                  assessment.
-                </p>
+              {(nutrition?.recipes.length ?? 0) > 0 && (
+                <button className={styles.secondary} onClick={draftWeek}>
+                  Draft from saved recipes
+                </button>
               )}
-              {!entries.length ? (
-                <p className={styles.muted}>
-                  No food entries for this date yet.
-                </p>
-              ) : (
-                <ul className={styles.foodEntries}>
-                  {entries.map((entry) => (
-                    <li key={entry.id}>
-                      <strong>{entry.title}</strong>
-                      <p className={styles.muted}>
-                        {label(entry.slot)}
-                        {entry.serving ? " · " + entry.serving : ""}
-                        {entry.note ? " · " + entry.note : ""}
-                      </p>
-                      {showNutrition && (
-                        <p className={styles.muted}>
-                          {entry.calories ?? "Unknown"} calories ·{" "}
-                          {entry.protein ?? "Unknown"} g protein ·{" "}
-                          {entry.nutritionSource ||
-                            "No nutrition source provided"}
-                        </p>
-                      )}
-                      <button
-                        className={styles.secondary}
-                        onClick={() => editFood(entry)}
-                      >
-                        Edit {entry.title}
-                      </button>
-                      <button
-                        className={styles.secondary}
-                        onClick={() => {
-                          if (confirm("Delete this food journal entry?"))
-                            save(
-                              {
-                                ...state.nutrition,
-                                journal: state.nutrition.journal.filter(
-                                  (e) => e.id !== entry.id,
-                                ),
-                              },
-                              "Food entry deleted.",
-                            );
-                        }}
-                      >
-                        Delete {entry.title}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-            <section className={styles.panel}>
-              <h2>Your recipe collection</h2>
-              <p>
-                Save family recipes or recipes you find online. Ingredients are
-                stored as you enter them; this app does not fetch or verify the
-                source page.
+              <p className={styles.muted}>
+                Suggestions draw on your favorites and linked recipe ideas.
+                Review preparation notes and swap anything before saving.
               </p>
-              <details ref={recipeForm}>
-                <summary>Add a recipe</summary>
+              {plan && (
+                <>
+                  <div
+                    className={styles.mealDayTabs}
+                    aria-label="Choose meal planning day"
+                  >
+                    {plan.days.map((entry, index) => (
+                      <button
+                        key={entry.date}
+                        aria-pressed={activeMealDay === index}
+                        onClick={() => setActiveMealDay(index)}
+                      >
+                        {new Date(entry.date + "T12:00:00").toLocaleDateString(
+                          [],
+                          { weekday: "short" },
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                  <div className={styles.mealGrid}>
+                    {plan.days.map((day, index) => (
+                      <fieldset
+                        key={day.date}
+                        data-active={activeMealDay === index}
+                      >
+                        <legend>
+                          {new Date(day.date + "T12:00:00").toLocaleDateString(
+                            [],
+                            {
+                              weekday: "short",
+                              month: "short",
+                              day: "numeric",
+                            },
+                          )}
+                        </legend>
+                        {mealSlots.map((slot) => (
+                          <label key={slot}>
+                            {label(slot)}
+                            <span className={styles.mealSlotRow}>
+                              <input
+                                aria-label={day.date + " " + slot}
+                                maxLength={160}
+                                list="saved-recipe-names"
+                                value={day.slots[slot]}
+                                onChange={(e) =>
+                                  updateMeal(index, slot, e.target.value)
+                                }
+                              />
+                              <button
+                                type="button"
+                                className={styles.secondary}
+                                aria-label={"Swap " + day.date + " " + slot}
+                                onClick={() => swapMeal(day.date, slot)}
+                              >
+                                ↻
+                              </button>
+                            </span>
+                          </label>
+                        ))}
+                      </fieldset>
+                    ))}
+                  </div>
+                </>
+              )}
+              <datalist id="saved-recipe-names">
+                {nutrition?.recipes.map((r) => (
+                  <option key={r.id} value={r.title} />
+                ))}
+              </datalist>
+              <button disabled={!plan} onClick={saveWeek}>
+                Save weekly plan
+              </button>
+              <details>
+                <summary>Grocery ingredient checklist</summary>
+                <p className={styles.muted}>
+                  From meals matching saved recipe names. Check amounts and
+                  portions for the whole week; quantities are not multiplied or
+                  combined. Typed family meals without recipes need their
+                  ingredients added separately.
+                </p>
+                {groceries.length ? (
+                  <ul>
+                    {groceries.map((row) => (
+                      <li key={row.ingredient}>
+                        {row.ingredient} <small>({row.meals.join(", ")})</small>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>
+                    Choose saved recipes in your week to build this checklist.
+                  </p>
+                )}
+              </details>
+            </section>
+          )}
+          <div className={styles.mealSections}>
+            {view === "journal" && (
+              <section className={styles.panel}>
+                <h2>Food journal</h2>
+                <label>
+                  Journal date
+                  <input
+                    type="date"
+                    required
+                    value={day}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        setDay(e.target.value);
+                        setEditing(null);
+                      }
+                    }}
+                  />
+                </label>
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
-                    addRecipe();
+                    addFood();
                   }}
                 >
                   <label>
-                    Recipe name
+                    Meal or snack
                     <input
                       required
-                      maxLength={160}
-                      value={recipe.title}
+                      maxLength={200}
+                      value={food.title}
                       onChange={(e) =>
-                        setRecipe({ ...recipe, title: e.target.value })
+                        setFood({ ...food, title: e.target.value })
                       }
                     />
                   </label>
                   <label>
-                    Ingredients (one per line)
-                    <textarea
-                      required
-                      value={recipe.ingredients}
-                      maxLength={10000}
+                    Meal type
+                    <select
+                      value={food.slot}
                       onChange={(e) =>
-                        setRecipe({ ...recipe, ingredients: e.target.value })
+                        setFood({ ...food, slot: e.target.value as Slot })
                       }
-                    />
+                    >
+                      {mealSlots.map((slot) => (
+                        <option key={slot} value={slot}>
+                          {label(slot)}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                   <label>
-                    Instructions (optional)
-                    <textarea
-                      maxLength={6000}
-                      value={recipe.instructions}
-                      onChange={(e) =>
-                        setRecipe({ ...recipe, instructions: e.target.value })
-                      }
-                    />
-                  </label>
-                  <div className={styles.formGrid}>
-                    <label>
-                      Preparation minutes (optional)
-                      <input
-                        type="number"
-                        min={1}
-                        max={480}
-                        value={recipe.minutes}
-                        onChange={(e) =>
-                          setRecipe({ ...recipe, minutes: e.target.value })
-                        }
-                      />
-                    </label>
-                    <label>
-                      Recipe servings
-                      <input
-                        required
-                        type="number"
-                        min={1}
-                        max={20}
-                        value={recipe.servings}
-                        onChange={(e) =>
-                          setRecipe({ ...recipe, servings: e.target.value })
-                        }
-                      />
-                    </label>
-                  </div>
-                  <label>
-                    Original recipe link (optional)
+                    Portion or serving (optional)
                     <input
-                      type="url"
-                      value={recipe.sourceUrl}
+                      maxLength={120}
+                      value={food.serving}
                       onChange={(e) =>
-                        setRecipe({ ...recipe, sourceUrl: e.target.value })
+                        setFood({ ...food, serving: e.target.value })
                       }
-                      placeholder="https://…"
                     />
                   </label>
-                  <div className={styles.topicChoices}>
-                    {mealSlots.map((slot) => (
-                      <label key={slot}>
+                  <details>
+                    <summary>
+                      Optional nutrition from a label or trusted source
+                    </summary>
+                    <div className={styles.formGrid}>
+                      <label>
+                        Calories for this entry
                         <input
-                          type="checkbox"
-                          checked={recipe.slots.includes(slot)}
+                          type="number"
+                          min={0}
+                          max={10000}
+                          step="any"
+                          value={food.calories}
                           onChange={(e) =>
-                            setRecipe({
-                              ...recipe,
-                              slots: e.target.checked
-                                ? [...recipe.slots, slot]
-                                : recipe.slots.filter((s) => s !== slot),
-                            })
+                            setFood({ ...food, calories: e.target.value })
                           }
                         />
-                        {label(slot)}
                       </label>
-                    ))}
-                  </div>
-                  <button>
-                    {recipeEditing ? "Save recipe changes" : "Save recipe"}
-                  </button>
+                      <label>
+                        Protein, grams for this entry
+                        <input
+                          type="number"
+                          min={0}
+                          max={500}
+                          step="any"
+                          value={food.protein}
+                          onChange={(e) =>
+                            setFood({ ...food, protein: e.target.value })
+                          }
+                        />
+                      </label>
+                    </div>
+                    <label>
+                      Nutrition source
+                      <input
+                        maxLength={300}
+                        value={food.nutritionSource}
+                        onChange={(e) =>
+                          setFood({ ...food, nutritionSource: e.target.value })
+                        }
+                        placeholder="Package label, recipe page, or your estimate"
+                      />
+                    </label>
+                    <p className={styles.muted}>
+                      Use values for the portion you actually logged. Unknown
+                      values stay unknown.
+                    </p>
+                  </details>
+                  <label>
+                    Notes (optional)
+                    <input
+                      maxLength={1000}
+                      value={food.note}
+                      onChange={(e) =>
+                        setFood({ ...food, note: e.target.value })
+                      }
+                    />
+                  </label>
+                  <button>{editing ? "Save food changes" : "Log food"}</button>
+                  {editing && (
+                    <button
+                      type="button"
+                      className={styles.secondary}
+                      onClick={() => {
+                        setEditing(null);
+                        setFood({
+                          ...food,
+                          title: "",
+                          serving: "",
+                          calories: "",
+                          protein: "",
+                          nutritionSource: "",
+                          note: "",
+                        });
+                      }}
+                    >
+                      Cancel edit
+                    </button>
+                  )}
                 </form>
-              </details>
-              {nutrition?.recipes.length ? (
-                <ul className={styles.foodEntries}>
-                  {nutrition.recipes.map((saved) => {
-                    const avoided = recipeRestrictions(saved, [
-                      ...state.food.dislikes,
-                      ...state.food.allergies,
-                    ]);
-                    return (
-                      <li key={saved.id}>
-                        <strong>{saved.title}</strong>
+                <div className={styles.topicChoices}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={showNutrition}
+                      onChange={(e) => setShowNutrition(e.target.checked)}
+                    />
+                    Show nutrition information I entered
+                  </label>
+                </div>
+                {showNutrition && (
+                  <p>
+                    {summary.calories.toLocaleString()} recorded calories ·{" "}
+                    {summary.protein.toLocaleString()} g recorded protein.{" "}
+                    {summary.missingCalories} entries have unknown calories and{" "}
+                    {summary.missingProtein} have unknown protein. These are
+                    partial self-reported values, not a daily target or
+                    assessment.
+                  </p>
+                )}
+                {!entries.length ? (
+                  <p className={styles.muted}>
+                    No food entries for this date yet.
+                  </p>
+                ) : (
+                  <ul className={styles.foodEntries}>
+                    {entries.map((entry) => (
+                      <li key={entry.id}>
+                        <strong>{entry.title}</strong>
                         <p className={styles.muted}>
-                          {saved.servings} servings ·{" "}
-                          {saved.minutes === null
-                            ? "Prep time not provided"
-                            : saved.minutes + " minutes"}
-                          {avoided.length
-                            ? " · Excluded from rotation: " + avoided.join(", ")
-                            : ""}
+                          {label(entry.slot)}
+                          {entry.serving ? " · " + entry.serving : ""}
+                          {entry.note ? " · " + entry.note : ""}
                         </p>
-                        <details>
-                          <summary>Ingredients & instructions</summary>
-                          <ul>
-                            {saved.ingredients.map((ingredient, i) => (
-                              <li key={i}>{ingredient}</li>
-                            ))}
-                          </ul>
-                          <p>
-                            {saved.instructions || "No instructions entered."}
-                          </p>
-                        </details>
-                        {saved.sourceUrl && (
-                          <p>
-                            <a
-                              href={saved.sourceUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              Original recipe ↗
-                            </a>
+                        {showNutrition && (
+                          <p className={styles.muted}>
+                            {entry.calories ?? "Unknown"} calories ·{" "}
+                            {entry.protein ?? "Unknown"} g protein ·{" "}
+                            {entry.nutritionSource ||
+                              "No nutrition source provided"}
                           </p>
                         )}
                         <button
                           className={styles.secondary}
-                          onClick={() => {
-                            if (
-                              confirm(
-                                "Remove this saved recipe? Existing meal-plan names and journal entries will stay.",
-                              )
-                            )
-                              save(
-                                {
-                                  ...state.nutrition,
-                                  recipes: state.nutrition.recipes.filter(
-                                    (r) => r.id !== saved.id,
-                                  ),
-                                },
-                                "Recipe removed. Check grocery ingredients for plans that used it.",
-                              );
-                          }}
+                          onClick={() => editFood(entry)}
                         >
-                          Remove {saved.title}
+                          Edit {entry.title}
                         </button>
                         <button
                           className={styles.secondary}
-                          onClick={() => editRecipe(saved)}
+                          onClick={() => {
+                            if (confirm("Delete this food journal entry?"))
+                              save(
+                                {
+                                  ...state.nutrition,
+                                  journal: state.nutrition.journal.filter(
+                                    (e) => e.id !== entry.id,
+                                  ),
+                                },
+                                "Food entry deleted.",
+                              );
+                          }}
                         >
-                          Edit recipe {saved.title}
+                          Delete {entry.title}
                         </button>
                       </li>
-                    );
-                  })}
-                </ul>
-              ) : (
-                <p className={styles.muted}>
-                  No recipes saved yet. Start with a family favorite; nothing is
-                  prefilled as a food you like.
+                    ))}
+                  </ul>
+                )}
+              </section>
+            )}
+            {view === "recipes" && (
+              <section className={styles.panel}>
+                <h2>Your recipe collection</h2>
+                <p>
+                  Save family recipes or recipes you find online. Ingredients
+                  are stored as you enter them; this app does not fetch or
+                  verify the source page.
                 </p>
-              )}
-            </section>
+                <details ref={recipeForm}>
+                  <summary>Add a recipe</summary>
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      addRecipe();
+                    }}
+                  >
+                    <label>
+                      Recipe name
+                      <input
+                        required
+                        maxLength={160}
+                        value={recipe.title}
+                        onChange={(e) =>
+                          setRecipe({ ...recipe, title: e.target.value })
+                        }
+                      />
+                    </label>
+                    <label>
+                      Ingredients (one per line)
+                      <textarea
+                        required
+                        value={recipe.ingredients}
+                        maxLength={10000}
+                        onChange={(e) =>
+                          setRecipe({ ...recipe, ingredients: e.target.value })
+                        }
+                      />
+                    </label>
+                    <label>
+                      Instructions (optional)
+                      <textarea
+                        maxLength={6000}
+                        value={recipe.instructions}
+                        onChange={(e) =>
+                          setRecipe({ ...recipe, instructions: e.target.value })
+                        }
+                      />
+                    </label>
+                    <div className={styles.formGrid}>
+                      <label>
+                        Preparation minutes (optional)
+                        <input
+                          type="number"
+                          min={1}
+                          max={480}
+                          value={recipe.minutes}
+                          onChange={(e) =>
+                            setRecipe({ ...recipe, minutes: e.target.value })
+                          }
+                        />
+                      </label>
+                      <label>
+                        Recipe servings
+                        <input
+                          required
+                          type="number"
+                          min={1}
+                          max={20}
+                          value={recipe.servings}
+                          onChange={(e) =>
+                            setRecipe({ ...recipe, servings: e.target.value })
+                          }
+                        />
+                      </label>
+                    </div>
+                    <label>
+                      Original recipe link (optional)
+                      <input
+                        type="url"
+                        value={recipe.sourceUrl}
+                        onChange={(e) =>
+                          setRecipe({ ...recipe, sourceUrl: e.target.value })
+                        }
+                        placeholder="https://…"
+                      />
+                    </label>
+                    <div className={styles.topicChoices}>
+                      {mealSlots.map((slot) => (
+                        <label key={slot}>
+                          <input
+                            type="checkbox"
+                            checked={recipe.slots.includes(slot)}
+                            onChange={(e) =>
+                              setRecipe({
+                                ...recipe,
+                                slots: e.target.checked
+                                  ? [...recipe.slots, slot]
+                                  : recipe.slots.filter((s) => s !== slot),
+                              })
+                            }
+                          />
+                          {label(slot)}
+                        </label>
+                      ))}
+                    </div>
+                    <button>
+                      {recipeEditing ? "Save recipe changes" : "Save recipe"}
+                    </button>
+                  </form>
+                </details>
+                {nutrition?.recipes.length ? (
+                  <ul className={styles.foodEntries}>
+                    {nutrition.recipes.map((saved) => {
+                      const avoided = mealRestrictions(saved, state.food);
+                      return (
+                        <li key={saved.id}>
+                          <strong>{saved.title}</strong>
+                          <p className={styles.muted}>
+                            {saved.servings} servings ·{" "}
+                            {saved.minutes === null
+                              ? "Prep time not provided"
+                              : saved.minutes + " minutes"}
+                            {avoided.length
+                              ? " · Excluded from rotation: " +
+                                avoided.join(", ")
+                              : ""}
+                          </p>
+                          {saved.notes && (
+                            <p className={styles.recipeNote}>{saved.notes}</p>
+                          )}
+                          <details>
+                            <summary>Ingredients & instructions</summary>
+                            <ul>
+                              {saved.ingredients.map((ingredient, i) => (
+                                <li key={i}>{ingredient}</li>
+                              ))}
+                            </ul>
+                            <p>
+                              {saved.instructions || "No instructions entered."}
+                            </p>
+                          </details>
+                          {saved.sourceUrl && (
+                            <p>
+                              <a
+                                href={saved.sourceUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                Original recipe ↗
+                              </a>
+                            </p>
+                          )}
+                          <button
+                            className={styles.secondary}
+                            onClick={() => {
+                              if (
+                                confirm(
+                                  "Remove this saved recipe? Existing meal-plan names and journal entries will stay.",
+                                )
+                              )
+                                save(
+                                  {
+                                    ...state.nutrition,
+                                    recipes: state.nutrition.recipes.filter(
+                                      (r) => r.id !== saved.id,
+                                    ),
+                                  },
+                                  "Recipe removed. Check grocery ingredients for plans that used it.",
+                                );
+                            }}
+                          >
+                            Remove {saved.title}
+                          </button>
+                          <button
+                            className={styles.secondary}
+                            onClick={() => editRecipe(saved)}
+                          >
+                            Edit recipe {saved.title}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <p className={styles.muted}>
+                    No recipes saved yet. Start with a family favorite; nothing
+                    is prefilled as a food you like.
+                  </p>
+                )}
+              </section>
+            )}
           </div>
         </>
       )}

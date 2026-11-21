@@ -8,6 +8,7 @@ import {
   type PersonalWorkspace,
 } from "@/lib/personal-workspace";
 import styles from "./notion-daily-planner.module.css";
+import { mealSlots } from "@/lib/nutrition";
 const lines = (text: string) => [
   ...new Set(
     text
@@ -28,7 +29,14 @@ export default function PersonalPreferences() {
       likes: "",
       dislikes: "",
       allergies: "",
+      ingredientExceptions: "",
     });
+  const [rawMeals, setRawMeals] = useState({
+    breakfast: "",
+    lunch: "",
+    dinner: "",
+    snack: "",
+  });
   useEffect(() => {
     void fetch("/api/personal-profile-snapshot", { cache: "no-store" })
       .then(async (response) => {
@@ -44,10 +52,26 @@ export default function PersonalPreferences() {
         likes: workspace.state.food.likes.join(", "),
         dislikes: workspace.state.food.dislikes.join(", "),
         allergies: workspace.state.food.allergies.join(", "),
+        ingredientExceptions:
+          workspace.state.food.ingredientExceptions.join(", "),
       });
+      setRawMeals(
+        Object.fromEntries(
+          mealSlots.map((slot) => [
+            slot,
+            workspace
+              .state!.food.favoriteMeals.filter((meal) => meal.slot === slot)
+              .map((meal) => meal.title)
+              .join(", "),
+          ]),
+        ) as typeof rawMeals,
+      );
     }
   }, [workspace.state, draft]);
-  function food(field: "likes" | "dislikes" | "allergies", value: string) {
+  function food(
+    field: "likes" | "dislikes" | "allergies" | "ingredientExceptions",
+    value: string,
+  ) {
     setRawFood((previous) => ({ ...previous, [field]: value }));
   }
   function reviewKnownProfile() {
@@ -58,6 +82,10 @@ export default function PersonalPreferences() {
       food: {
         ...draft.food,
         meals: knownProfile.food.meals ?? draft.food.meals,
+        allergyStatus:
+          draft.food.allergyStatus === "unknown"
+            ? knownProfile.food.allergyStatus
+            : draft.food.allergyStatus,
       },
       news: [...new Set([...draft.news, ...knownProfile.news])],
     });
@@ -69,9 +97,34 @@ export default function PersonalPreferences() {
       dislikes: [
         ...new Set([...lines(rawFood.dislikes), ...knownProfile.food.dislikes]),
       ].join(", "),
+      ingredientExceptions: [
+        ...new Set([
+          ...lines(rawFood.ingredientExceptions),
+          ...knownProfile.food.ingredientExceptions,
+        ]),
+      ].join(", "),
+      allergies:
+        draft.food.allergyStatus === "unknown"
+          ? knownProfile.food.allergies.join(", ")
+          : rawFood.allergies,
     });
+    setRawMeals(
+      Object.fromEntries(
+        mealSlots.map((slot) => [
+          slot,
+          [
+            ...new Set([
+              ...lines(rawMeals[slot]),
+              ...knownProfile.food.favoriteMeals
+                .filter((meal) => meal.slot === slot)
+                .map((meal) => meal.title),
+            ]),
+          ].join(", "),
+        ]),
+      ) as typeof rawMeals,
+    );
     setMessage(
-      "Confirmed preferences from our chat are filled for review. Your existing allergy answers are preserved; unknown allergies remain unknown. Save after reviewing.",
+      "Confirmed preferences from our chat are filled for review. Existing allergy answers are preserved; previously unknown answers can use your latest confirmation. Save after reviewing.",
     );
   }
   function save() {
@@ -83,6 +136,22 @@ export default function PersonalPreferences() {
           ...draft.food,
           likes: lines(rawFood.likes),
           dislikes: lines(rawFood.dislikes),
+          ingredientExceptions: lines(rawFood.ingredientExceptions),
+          favoriteMeals: mealSlots.flatMap((slot) =>
+            lines(rawMeals[slot]).map((title) => ({
+              id:
+                [
+                  ...draft.food.favoriteMeals,
+                  ...(knownProfile?.food.favoriteMeals ?? []),
+                ].find(
+                  (meal) =>
+                    meal.slot === slot &&
+                    meal.title.toLowerCase() === title.toLowerCase(),
+                )?.id ?? crypto.randomUUID(),
+              title,
+              slot,
+            })),
+          ),
           allergies:
             draft.food.allergyStatus === "listed"
               ? lines(rawFood.allergies)
@@ -178,6 +247,37 @@ export default function PersonalPreferences() {
                 onChange={(e) => food("dislikes", e.target.value)}
               />
             </label>
+            <label>
+              Dislikes that are okay inside other recipes
+              <input
+                value={rawFood.ingredientExceptions}
+                onChange={(e) => food("ingredientExceptions", e.target.value)}
+                placeholder="For example: eggs"
+              />
+            </label>
+            <p className={styles.muted}>
+              Use the same ingredient name as in dislikes. This never overrides
+              an allergy or medical restriction.
+            </p>
+            <details>
+              <summary>Favorite meals to use in weekly suggestions</summary>
+              {mealSlots.map((slot) => (
+                <label key={slot}>
+                  {slot[0].toUpperCase() + slot.slice(1)} favorites (comma
+                  separated)
+                  <input
+                    value={rawMeals[slot]}
+                    onChange={(e) =>
+                      setRawMeals({ ...rawMeals, [slot]: e.target.value })
+                    }
+                  />
+                </label>
+              ))}
+              <p className={styles.muted}>
+                Family favorites need no recipe to appear in the plan.
+                Ingredients and nutrition remain unknown until you add them.
+              </p>
+            </details>
             <label>
               Who usually prepares meals?
               <select

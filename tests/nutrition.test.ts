@@ -118,7 +118,12 @@ test("older personal workspaces gain an empty nutrition section without losing p
     ...old,
     food: { ...old.food, dislikes: ["Example dislike"] },
   });
-  assert.deepEqual(loaded.nutrition, { recipes: [], journal: [], plans: [] });
+  assert.deepEqual(loaded.nutrition, {
+    recipes: [],
+    journal: [],
+    plans: [],
+    hiddenIdeas: [],
+  });
   assert.deepEqual(loaded.food.dislikes, ["Example dislike"]);
   assert.deepEqual(loaded.calendars, old.calendars);
 });

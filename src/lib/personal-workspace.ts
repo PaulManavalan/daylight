@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { calendarSnapshotSchema, emptyCalendars } from "./calendar-transfer";
-import { nutritionSchema, emptyNutrition } from "./nutrition";
+import { nutritionSchema, emptyNutrition, mealSlots } from "./nutrition";
 const foodList = z.array(z.string().trim().min(1).max(80)).max(60);
 export const newsTopics = [
   "US",
@@ -20,6 +20,17 @@ export const personalWorkspaceSchema = z.object({
     .object({
       likes: foodList,
       dislikes: foodList,
+      ingredientExceptions: foodList.default([]),
+      favoriteMeals: z
+        .array(
+          z.object({
+            id: z.uuid(),
+            title: z.string().trim().min(1).max(160),
+            slot: z.enum(mealSlots),
+          }),
+        )
+        .max(40)
+        .default([]),
       allergyStatus: z.enum(["unknown", "none", "listed"]),
       allergies: foodList,
       meals: z.enum(["family", "self", "school", "mixed"]).nullable(),
@@ -49,6 +60,8 @@ export const defaultPersonalWorkspace = (): PersonalWorkspace => ({
   food: {
     likes: [],
     dislikes: [],
+    ingredientExceptions: [],
+    favoriteMeals: [],
     allergyStatus: "unknown",
     allergies: [],
     meals: null,

@@ -16,6 +16,10 @@ export const recipeSchema = z.object({
   notes: z.string().max(1000),
 });
 export type Recipe = z.infer<typeof recipeSchema>;
+export type MealCandidate = Pick<
+  Recipe,
+  "id" | "title" | "ingredients" | "slots" | "minutes"
+>;
 export const foodEntrySchema = z
   .object({
     id: z.uuid(),
@@ -66,6 +70,7 @@ export const nutritionSchema = z
     recipes: z.array(recipeSchema).max(200),
     journal: z.array(foodEntrySchema).max(2000),
     plans: z.array(mealPlanSchema).max(26),
+    hiddenIdeas: z.array(z.uuid()).max(200).default([]),
   })
   .refine(
     (state) =>
@@ -79,6 +84,7 @@ export const emptyNutrition = (): NutritionState => ({
   recipes: [],
   journal: [],
   plans: [],
+  hiddenIdeas: [],
 });
 export function localDate(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -115,7 +121,10 @@ function words(text: string) {
     .trim();
 }
 /** Conservative ingredient matching, not certification that a recipe is allergen-free. */
-export function recipeRestrictions(recipe: Recipe, avoid: string[]) {
+export function recipeRestrictions(
+  recipe: Pick<Recipe, "title" | "ingredients">,
+  avoid: string[],
+) {
   const text =
     " " + words(recipe.title + " " + recipe.ingredients.join(" ")) + " ";
   return avoid.filter((item) => {
@@ -128,18 +137,45 @@ export function recipeRestrictions(recipe: Recipe, avoid: string[]) {
     );
   });
 }
+export interface MealFoodPreferences {
+  likes?: string[];
+  dislikes: string[];
+  allergies: string[];
+  ingredientExceptions?: string[];
+}
+export function mealRestrictions(
+  recipe: Pick<Recipe, "title" | "ingredients">,
+  food: MealFoodPreferences,
+) {
+  const exceptions = new Set(
+    (food.ingredientExceptions ?? []).map((value) =>
+      words(value).replace(/s$/, ""),
+    ),
+  );
+  const ingredientAvoid = food.dislikes.filter(
+    (value) => !exceptions.has(words(value).replace(/s$/, "")),
+  );
+  return [
+    ...new Set([
+      ...recipeRestrictions(
+        { title: recipe.title, ingredients: [] },
+        food.dislikes,
+      ),
+      ...recipeRestrictions(recipe, [...ingredientAvoid, ...food.allergies]),
+    ]),
+  ];
+}
 export function draftMealWeek(
   date: string,
-  recipes: Recipe[],
-  food: { dislikes: string[]; allergies: string[]; likes?: string[] },
+  recipes: MealCandidate[],
+  food: MealFoodPreferences,
   maxMinutes = 120,
 ) {
   const plan = emptyMealPlan(date),
     eligible = recipes
       .filter(
         (recipe) =>
-          !recipeRestrictions(recipe, [...food.dislikes, ...food.allergies])
-            .length &&
+          !mealRestrictions(recipe, food).length &&
           (recipe.minutes === null || recipe.minutes <= maxMinutes),
       )
       .sort(

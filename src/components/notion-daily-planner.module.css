@@ -578,3 +578,92 @@
     display: none;
   }
 }
+.moduleNav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 0 24px;
+}
+.page .moduleNav button {
+  background: transparent;
+  color: #c5d3b4;
+  border-color: #3f513a;
+  margin: 0;
+}
+.page .moduleNav button[aria-pressed="true"] {
+  background: #bace9e;
+  color: #17251a;
+}
+.recipeCards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 16px;
+  margin-top: 22px;
+}
+.ideaCard {
+  border: 1px solid #3c4f36;
+  background: #1d2b20;
+  border-radius: 16px;
+  padding: 22px;
+}
+.ideaCard h3 {
+  font-family: Georgia, serif;
+  font-size: 24px;
+  margin: 12px 0;
+}
+.ideaCard li {
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 7px 0;
+}
+.recipeNote {
+  padding: 10px 12px;
+  border-left: 2px solid #a7ba88;
+  background: #293623;
+  color: #c5d2b6;
+  font-size: 12px !important;
+}
+.planActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 16px 0;
+}
+.planActions label {
+  margin-left: auto;
+}
+.mealSlotRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px;
+  gap: 6px;
+  align-items: center;
+}
+.mealSlotRow button {
+  padding: 10px !important;
+  margin: 0 !important;
+  font-size: 18px !important;
+  min-height: 42px;
+}
+.mealSlotRow input {
+  min-width: 0;
+}
+@media (max-width: 600px) {
+  .recipeCards {
+    grid-template-columns: 1fr;
+  }
+  .moduleNav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .moduleNav button {
+    min-height: 44px;
+  }
+  .planActions {
+    display: block;
+  }
+  .planActions label {
+    display: block;
+    margin: 8px 0;
+  }
+}

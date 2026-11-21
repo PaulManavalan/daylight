@@ -4,6 +4,8 @@ A calm student planner with a task database, day/week calendar, protected time, 
 
 ## Run locally
 
+On the development branch, **Start Daylight Preview.cmd** opens the Notion-first daily planner at http://127.0.0.1:3104/day. Its server uses an isolated build snapshot, so rebuilding the project cannot remove the JavaScript or CSS files used by the running preview. It checks the page and its assets before opening. The original workspace and launcher below remain available. The preview adds reviewed calendar-file import/export and optional day-details review when AI is unavailable; these are not live calendar sync. See [the current requirements and checkpoint status](docs/master-requirements.md) and [calendar integration details](docs/calendar-integrations.md).
+
 On Windows, double-click **Start Daylight.cmd** in the project folder. It finds Node.js (including the existing Codex runtime), rebuilds when application source or build configuration changes, and serves it at http://127.0.0.1:3102 without requiring `pnpm` on your PowerShell PATH. If Daylight is already responding, the launcher opens that instance; if a port is occupied or unresponsive, it tries ports through 3112 and opens the selected address. Browser-local records are separate for each port; changing ports does not delete records at the old address. Keep the launcher window open while using Daylight. Run `& ".\Start Daylight.cmd" --check` in PowerShell to check the runtime without starting a server.
 
 Requires Node.js 20.9+ and pnpm (or npm). Dependencies are locked in `pnpm-lock.yaml`.

@@ -188,3 +188,6 @@ Reads are bounded: a regular source page reads up to 300 top-level blocks and sh
 Validation: `tests/notion.test.ts` and `tests/notion-api.test.ts` cover parsing, provenance, encryption/tampering, ownership, CSRF/state expiry, refresh, body limits and verified retry behavior. After a build, `node tests/notion-browser.cjs` exercises the workflow with synthetic records and mocked Notion transport. A real OAuth sign-in and real read/write verification against the selected pages are still required after configuring the app credentials.
 
 References: [Notion OAuth authorization](https://developers.notion.com/guides/authorization/overview), [query data sources](https://developers.notion.com/reference/query-a-data-source), [append blocks](https://developers.notion.com/reference/patch-block-children).
+### Vercel build settings
+
+The root `vercel.json` explicitly selects Next.js, runs `pnpm run build`, and uses `.next` as its framework output. These repository settings override a stale dashboard preset that expects `public/`. Deploy the server build on Vercel so `/api/assistant` and `/api/notion` remain available; `build:hosted` and `out/` are separate static-export targets. A successful build does not replace the Notion OAuth environment setup above.

@@ -2,6 +2,10 @@ import type {MLCEngineInterface} from "@mlc-ai/web-llm";
 import {dialogueSchema,proposalSchema,combineModelStages,modelResponseFormat,type BrainRequest} from "./assistant-brain";
 import {modelMessages,isPlanExplanation,isExploratoryConversation,isExplicitNewTask,needsProgressClarification} from "./model-messages";
 export const browserModelId="Qwen2.5-1.5B-Instruct-q4f16_1-MLC";
+export function browserModelLoadMessage(cause:unknown){
+ const reason=cause instanceof Error?cause.message:typeof cause==='string'?cause:'';
+ return /failed to fetch|networkerror|network request failed|download.*failed/i.test(reason)?'Chat model files could not be downloaded. Check your connection and retry. Cached files can be reused; your message is kept.':'Browser chat could not load. Check your connection and try again, or use local AI. Your message is kept.';
+}
 export class BrowserModel{
  private worker:Worker|null=null;private engine:MLCEngineInterface|null=null;
  async load(progress:(amount:number,text:string)=>void,signal:AbortSignal){
@@ -17,7 +21,7 @@ export class BrowserModel{
    worker=new Worker(new URL('./browser-model.worker.ts',import.meta.url),{type:'module'});this.worker=worker;
    const failed=new Promise<never>((_,reject)=>{crash=()=>reject(new Error('The browser could not start chat.'));worker!.addEventListener('error',crash,{once:true});});
    this.engine=await Promise.race([CreateWebWorkerMLCEngine(worker,modelId,{initProgressCallback:report=>progress(report.progress,report.text),logLevel:'WARN'},{context_window_size:4096}),stopped,failed]);
-  }catch(e){worker?.terminate();this.worker=null;if(signal.aborted)throw new Error('Model loading stopped. Cached files can be reused on retry.');if(e instanceof Error && e.name==='BrowserGPUUnavailable')throw e;throw new Error('Browser chat could not load. Check your connection and try again, or use local AI. Your message is kept.',{cause:e});}finally{signal.removeEventListener('abort',abort);worker?.removeEventListener('error',crash);}
+  }catch(e){worker?.terminate();this.worker=null;if(signal.aborted)throw new Error('Model loading stopped. Cached files can be reused on retry.');if(e instanceof Error && e.name==='BrowserGPUUnavailable')throw e;throw new Error(browserModelLoadMessage(e),{cause:e});}finally{signal.removeEventListener('abort',abort);worker?.removeEventListener('error',crash);}
  }
  async ask(request:BrainRequest,signal:AbortSignal){if(!this.engine)throw new Error("Enable the browser model first.");if(signal.aborted)throw new Error('Chat request stopped.');const engine=this.engine,worker=this.worker;let stop=()=>{},crash=()=>{};
  const stopped=new Promise<never>((_,reject)=>{stop=()=>{try{void Promise.resolve(engine.interruptGenerate()).catch(()=>{});}catch{}reject(new Error(signal.reason?.name==='TimeoutError'?'Chat took too long. Try a shorter message; your plan is unchanged.':'Chat request stopped.'));};signal.addEventListener('abort',stop,{once:true});});

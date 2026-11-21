@@ -1,9 +1,13 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {BrowserModel} from '../src/lib/browser-model';
+import {BrowserModel,browserModelLoadMessage} from '../src/lib/browser-model';
 import {brainContext} from '../src/lib/assistant-brain';
 import {defaults} from '../src/lib/scheduling';
 const request={persona:{name:'Sol',tone:'calm' as const},context:brainContext([],defaults(),[],[]),messages:[{role:'user' as const,content:'I just want to talk.'}]};
+test('worker fetch failures explain download recovery without exposing internal errors',()=>{
+ for(const cause of ['TypeError: Failed to fetch',new TypeError('Failed to fetch'),new Error('NetworkError')])assert.match(browserModelLoadMessage(cause),/could not be downloaded.*Cached files can be reused/);
+ const message=browserModelLoadMessage(new Error('internal driver details'));assert.match(message,/could not load/);assert.doesNotMatch(message,/internal driver/);
+});
 test('model loading can stop even when GPU discovery never resolves',{timeout:5000},async t=>{
  const previous=Object.getOwnPropertyDescriptor(globalThis,'navigator');Object.defineProperty(globalThis,'navigator',{configurable:true,value:{gpu:{requestAdapter:()=>new Promise(()=>{})}}});t.after(()=>{if(previous)Object.defineProperty(globalThis,'navigator',previous);else Reflect.deleteProperty(globalThis,'navigator');});
  const model=new BrowserModel(),controller=new AbortController(),pending=model.load(()=>{},controller.signal);controller.abort();await assert.rejects(pending,/loading stopped/);

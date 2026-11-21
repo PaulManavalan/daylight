@@ -53,3 +53,13 @@ test('removing a check-in is idempotent and rejects a stale reviewed entry',()=>
  assert.throws(()=>removeDailyCheckIn({...state,daily_checkins:[{...entry,note:'Newer note'}]},entry),/changed in another tab/);
  const next=removeDailyCheckIn(state,entry);assert.equal(next.daily_checkins?.length,0);assert.equal(state.daily_checkins?.length,1);assert.deepEqual(next.sessions,state.sessions);assert.equal(removeDailyCheckIn(next,entry),next);
 });
+test('large task lists and check-in history leave valid bounded context without dropping unsaved work',()=>{
+ const state=defaults();state.daily_checkins=Array.from({length:6},()=>dailyCheckInDraft('Morning check-in: '+'x'.repeat(1990),now)!);
+ const input={title:'Essay '+ 'x'.repeat(190),subject:'S'.repeat(80),description:'',deadline:null,estimated_minutes:45,remaining_minutes:45,priority:'medium' as const,energy_level:'high' as const,status:'not_started' as const};
+ const tasks=Array.from({length:70},(_,i)=>({...input,id:crypto.randomUUID(),title:String(i)+input.title,user_id:'synthetic',actual_minutes:0,created_at:now.toISOString(),updated_at:now.toISOString()}));
+ const drafts=Array.from({length:20},()=>({...input}));const context=brainContext(tasks,state,drafts,[],now),data=JSON.parse(context);
+ assert.ok(context.length<=26000);assert.equal(data.unsavedTasks.length,20);assert.equal(data.omittedTasks+data.tasks.length,tasks.length);assert.equal(data.tasks[0].id,tasks[0].id);
+ const request={context,messages:[{role:'user' as const,content:'Actually keep all these drafts, but change the first title.'}],persona:{name:'Sol',tone:'calm' as const}};
+ assert.throws(()=>modelMessages(request,true,'capture'),/proposal is too large/,'A small model must not silently lose pending drafts while compressing context.');
+ assert.equal(JSON.parse(request.context).unsavedTasks.length,20);
+});

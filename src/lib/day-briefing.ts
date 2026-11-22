@@ -3,6 +3,7 @@ import { emptyCalendars, calendarBusyToday } from "./calendar-transfer";
 import { fitnessActivitiesForDate } from "./fitness";
 import { dateKey } from "./scheduling";
 import type { PersonalWorkspace } from "./personal-workspace";
+import { homeworkProgressFor } from "./day-homework-progress";
 
 /** A read-only view of confirmed local records, not an AI summary or background job. */
 export function dayBriefing(
@@ -59,9 +60,17 @@ export function dayBriefing(
     warnings,
     sample: saved?.sample ?? false,
     sourceReadAt: saved?.source.readAt ?? null,
+    homeworkProgress: saved?.homeworkProgress ?? [],
     assignments:
       saved?.source.items.filter(
-        (i) => i.yellowHighlighted && i.completion !== "checked",
+        (i) =>
+          i.yellowHighlighted &&
+          i.completion !== "checked" &&
+          homeworkProgressFor(
+            saved!.homeworkProgress,
+            saved!.source.pageId,
+            i.key,
+          ).status !== "complete",
       ) ?? [],
     readingUrl: `https://bible.usccb.org/bible/readings/${day.slice(5, 7)}${day.slice(8, 10)}${day.slice(2, 4)}.cfm`,
   };

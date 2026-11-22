@@ -2,6 +2,10 @@ import { z } from "zod";
 import { runningSourceSchema } from "./notion-running-schema";
 import { notionDayContextSchema } from "./notion-day-model";
 import { notionDayPlanSchema } from "./notion-day-plan";
+import {
+  homeworkProgressSchema,
+  pendingHomeworkCheckinSchema,
+} from "./day-homework-progress";
 export const savedDaySessionSchema = z.object({
   source: runningSourceSchema,
   sample: z.boolean(),
@@ -16,6 +20,8 @@ export const savedDaySessionSchema = z.object({
     .max(200),
   plan: notionDayPlanSchema.nullable(),
   approved: z.boolean(),
+  homeworkProgress: homeworkProgressSchema.default([]),
+  pendingHomeworkCheckin: pendingHomeworkCheckinSchema.nullable().default(null),
   calendarRevision: z.string().optional(),
   activityRevision: z.string().optional(),
 });

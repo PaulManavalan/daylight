@@ -476,6 +476,47 @@ function ownerFrom(request) {
     await two.page
       .getByRole("heading", { name: "Your approved timeline", exact: true })
       .waitFor();
+    await one.page.getByText("Check in on homework", { exact: true }).click();
+    await one.page
+      .getByLabel("Homework item", { exact: true })
+      .selectOption("sample-0");
+    await one.page
+      .getByLabel("Minutes actually worked", { exact: true })
+      .fill("20");
+    await one.page
+      .getByLabel("More focus minutes wanted today", { exact: true })
+      .fill("10");
+    await one.page
+      .getByRole("button", { name: "Review homework check-in", exact: true })
+      .click();
+    assert.equal(
+      documents.get(A + ":day:2026-11-21").payload.homeworkProgress.length,
+      0,
+    );
+    await one.page
+      .getByRole("button", {
+        name: "Save reviewed homework check-in",
+        exact: true,
+      })
+      .click();
+    await waitForDocument(
+      A + ":day:2026-11-21",
+      (row) => row?.payload.homeworkProgress?.length === 1,
+    );
+    assert.equal(documents.get(A + ":day:2026-11-21").payload.approved, false);
+    await two.page.goto(server.url + "/day");
+    await two.page.reload();
+    await two.page
+      .getByText("20 recorded minutes today", { exact: true })
+      .waitFor();
+    await other.page.goto(server.url + "/day");
+    assert.equal(
+      await other.page
+        .getByText("20 recorded minutes today", { exact: true })
+        .count(),
+      0,
+    );
+    await other.page.goto(server.url + "/day/preferences");
     await other.page.evaluate(
       (value) =>
         localStorage.setItem(

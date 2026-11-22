@@ -61,7 +61,11 @@ export function parseAccountBackup(text: string): AccountBackup {
         return [
           key,
           key.startsWith("day:") && valid !== null
-            ? { ...(valid as object), approved: false }
+            ? {
+                ...(valid as object),
+                approved: false,
+                pendingHomeworkCheckin: null,
+              }
             : valid,
         ];
       }),

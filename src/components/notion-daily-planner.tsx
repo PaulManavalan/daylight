@@ -35,6 +35,20 @@ import {
 } from "./account-workspace-context";
 import { stableJSON } from "@/lib/workspace-documents";
 import { refreshDaySource, daySourceContext } from "@/lib/day-source-refresh";
+import DayHomeworkCheckin from "./day-homework-checkin";
+import HomeworkProposalCard from "./homework-proposal-card";
+import { chatDecision, wantsOpenChat } from "@/lib/chat-actions";
+import { isHomeworkWorkReport } from "@/lib/day-homework-model";
+import {
+  appendHomeworkWork,
+  removeHomeworkWork,
+  homeworkProgressFor,
+  stageHomeworkCheckin,
+  verifyHomeworkCheckinReview,
+  type PendingHomeworkCheckin,
+  type HomeworkWorkRecord,
+  type HomeworkCheckin,
+} from "@/lib/day-homework-progress";
 
 const sourceSchema = runningSourceSchema;
 const messageSchema = z.object({
@@ -85,6 +99,11 @@ export default function NotionDailyPlanner() {
     [sample, setSample] = useState(false),
     [known, setKnown] = useState<NotionDayContext>(emptyNotionDay),
     [messages, setMessages] = useState<Message[]>([]),
+    [pendingHomeworkCheckin, setPendingHomeworkCheckin] =
+      useState<PendingHomeworkCheckin | null>(null),
+    [homeworkProgress, setHomeworkProgress] = useState<HomeworkWorkRecord[]>(
+      [],
+    ),
     [draft, setDraft] = useState(""),
     [plan, setPlan] = useState<NotionDayPlan | null>(null),
     [approved, setApproved] = useState(false),
@@ -103,6 +122,11 @@ export default function NotionDailyPlanner() {
     planCalendar = useRef(JSON.stringify(emptyCalendars())),
     planActivities = useRef("[]");
   const savedSequence = useRef(0),
+    workActive = useRef(false),
+    pendingWorkEdits = useRef<{
+      id: string;
+      value: HomeworkCheckin | null;
+    } | null>(null),
     writingDay = useRef<string | null>(null);
   useEffect(() => {
     setDay(today());
@@ -123,6 +147,8 @@ export default function NotionDailyPlanner() {
         setSample(saved.sample);
         setKnown(saved.known);
         setMessages(saved.messages);
+        setHomeworkProgress(saved.homeworkProgress);
+        setPendingHomeworkCheckin(saved.pendingHomeworkCheckin);
         setPlan(saved.plan);
         setApproved(saved.approved);
         planCalendar.current =
@@ -157,6 +183,7 @@ export default function NotionDailyPlanner() {
       } else if (localStorage.getItem(key) === savedVersion.current) return;
       setPlan(null);
       setApproved(false);
+      setPendingHomeworkCheckin(null);
       setError(
         "This saved day changed in another tab or device. Your conversation draft is kept; reload before saving or exporting.",
       );
@@ -186,6 +213,8 @@ export default function NotionDailyPlanner() {
     nextMessages: Message[],
     nextPlan: NotionDayPlan | null,
     nextApproved: boolean,
+    nextHomeworkProgress: HomeworkWorkRecord[] = homeworkProgress,
+    nextPendingHomeworkCheckin: PendingHomeworkCheckin | null = pendingHomeworkCheckin,
   ) {
     if (!account && localStorage.getItem(RESTORE_PENDING) !== null)
       throw new Error(
@@ -200,6 +229,8 @@ export default function NotionDailyPlanner() {
       messages: nextMessages.slice(-200),
       plan: nextPlan,
       approved: nextApproved,
+      homeworkProgress: nextHomeworkProgress,
+      pendingHomeworkCheckin: nextPendingHomeworkCheckin,
       activityRevision,
       calendarRevision: JSON.stringify(
         personal.state?.calendars ?? emptyCalendars(),
@@ -234,6 +265,7 @@ export default function NotionDailyPlanner() {
     savedVersion.current = encoded;
   }
   async function useSource(next: RunningListSource, isSample: boolean) {
+    if (workActive.current || requestActive.current) return;
     setSource(next);
     if (!isSample) setUrl(next.pageId);
     setSample(isSample);
@@ -241,10 +273,20 @@ export default function NotionDailyPlanner() {
     setMessages([]);
     setPlan(null);
     setApproved(false);
+    setPendingHomeworkCheckin(null);
     setError("");
     setSourceNotice("");
     try {
-      await persist(next, isSample, emptyNotionDay(), [], null, false);
+      await persist(
+        next,
+        isSample,
+        emptyNotionDay(),
+        [],
+        null,
+        false,
+        homeworkProgress,
+        null,
+      );
     } catch {
       setError(
         "This list is available for this session, but could not be saved on this browser.",
@@ -281,7 +323,8 @@ export default function NotionDailyPlanner() {
     }
   }
   async function readList(localSnapshot?: RunningListSource) {
-    if (busy || savingDay || requestActive.current) return;
+    if (busy || savingDay || requestActive.current || workActive.current)
+      return;
     setBusy(true);
     setError("");
     setSourceNotice("");
@@ -297,6 +340,19 @@ export default function NotionDailyPlanner() {
           planActivities.current !== activityRevision;
         let nextPlan = stale ? null : refreshed.plan;
         const nextApproved = stale ? false : refreshed.approved;
+        const pendingItem = source.items.find(
+            (item) => item.key === pendingHomeworkCheckin?.value.sourceKey,
+          ),
+          freshItem = next.items.find(
+            (item) => item.key === pendingHomeworkCheckin?.value.sourceKey,
+          );
+        const nextPending =
+          pendingHomeworkCheckin &&
+          source.pageId === next.pageId &&
+          pendingItem &&
+          stableJSON(pendingItem) === stableJSON(freshItem)
+            ? { ...pendingHomeworkCheckin, sourceReadAt: next.readAt }
+            : null;
         let reason = "";
         if (
           (refreshed.changed || stale) &&
@@ -311,6 +367,7 @@ export default function NotionDailyPlanner() {
               new Date(),
               personal.state.calendars,
               personal.state.fitness,
+              homeworkProgress,
             );
           } catch (e) {
             reason =
@@ -326,6 +383,8 @@ export default function NotionDailyPlanner() {
           messages,
           nextPlan,
           nextApproved,
+          homeworkProgress,
+          nextPending,
         );
         if (refreshed.changed || stale) {
           planCalendar.current = calendarRevision;
@@ -337,6 +396,7 @@ export default function NotionDailyPlanner() {
         setKnown(refreshed.known);
         setPlan(nextPlan);
         setApproved(nextApproved);
+        setPendingHomeworkCheckin(nextPending);
         setSourceNotice(
           refreshed.changed || stale
             ? nextPlan
@@ -380,6 +440,7 @@ export default function NotionDailyPlanner() {
     }
   }, [calendarRevision, activityRevision, personal.state, plan]);
   function downloadCalendar(includeTraining = false) {
+    if (workActive.current || busy || savingDay) return;
     if (
       !plan ||
       !approved ||
@@ -398,7 +459,55 @@ export default function NotionDailyPlanner() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   async function send(text = draft) {
-    if (!source || !text.trim() || requestActive.current || busy) return;
+    if (
+      !source ||
+      !text.trim() ||
+      requestActive.current ||
+      busy ||
+      workActive.current ||
+      savingDay
+    )
+      return;
+    if (pendingHomeworkCheckin) {
+      const decision = chatDecision(
+        text,
+        ["progress"],
+        messages.at(-1)?.content === pendingHomeworkCheckin.reviewReply
+          ? "progress"
+          : null,
+      );
+      const save =
+        /^\s*(?:please\s+)?(?:save|record)\s+(?:(?:this|that|the)\s+)?(?:homework\s+)?check[ -]?in[.!]?\s*$/i.test(
+          text,
+        );
+      const cancel =
+        /^\s*(?:cancel|discard)\s+(?:(?:this|that|the)\s+)?(?:homework\s+)?check[ -]?in[.!]?\s*$/i.test(
+          text,
+        );
+      if (decision || save || cancel) {
+        try {
+          if (cancel || decision?.action === "decline")
+            await cancelHomeworkProposal(text);
+          else {
+            const edit = pendingWorkEdits.current;
+            const value =
+              edit?.id === pendingHomeworkCheckin.id
+                ? edit.value
+                : pendingHomeworkCheckin.value;
+            if (!value)
+              throw Error(
+                "Check the edited minutes in the review card before saving.",
+              );
+            await confirmHomeworkProposal(value, text);
+          }
+          setDraft("");
+          setError("");
+        } catch (error) {
+          setError((error as Error).message);
+        }
+        return;
+      }
+    }
     requestActive.current = true;
     setError("");
     const nextMessages: Message[] = [
@@ -428,8 +537,38 @@ export default function NotionDailyPlanner() {
               known,
               text,
               brain.provider === "browser",
+              homeworkProgress,
             ),
             knownDay: known,
+            pendingHomeworkCheckin: pendingHomeworkCheckin
+              ? {
+                  ...pendingHomeworkCheckin,
+                  value:
+                    pendingWorkEdits.current?.id ===
+                      pendingHomeworkCheckin.id &&
+                    pendingWorkEdits.current.value
+                      ? pendingWorkEdits.current.value
+                      : pendingHomeworkCheckin.value,
+                }
+              : null,
+            recordedHomeworkMinutesToday: homeworkProgress
+              .filter((record) => record.sample === sample)
+              .reduce((sum, record) => sum + (record.minutes ?? 0), 0),
+            homeworkProgress: homeworkProgress
+              .filter(
+                (record) =>
+                  record.sample === sample &&
+                  record.sourcePageId === source.pageId,
+              )
+              .slice(brain.provider === "browser" ? -6 : -12)
+              .map((record) => ({
+                sourceKey: record.sourceKey,
+                title: record.title.slice(0, 160),
+                outcome: record.outcome,
+                minutes: record.minutes,
+                remainingMinutes: record.remainingMinutes,
+                note: record.note.slice(0, 120),
+              })),
             existingPlan: plan
               ? {
                   approved,
@@ -469,10 +608,23 @@ export default function NotionDailyPlanner() {
           "The model did not return a usable day context. Your message is kept.",
         );
       const parsedKnown = notionDayContextSchema.parse(result.dailyContext);
-      const updatePlan = shouldUpdateDayPlan(known, parsedKnown, text);
+      const updatePlan =
+        !result.homeworkCheckin &&
+        !isHomeworkWorkReport(text, !!pendingHomeworkCheckin) &&
+        shouldUpdateDayPlan(known, parsedKnown, text);
       const nextKnown = updatePlan ? parsedKnown : known;
       let nextPlan: NotionDayPlan | null = updatePlan ? null : plan;
       const nextApproved = updatePlan ? false : approved;
+      const nextPending = result.homeworkCheckin
+        ? stageHomeworkCheckin(
+            result.homeworkCheckin,
+            source,
+            homeworkProgress,
+            result.reply,
+          )
+        : wantsOpenChat(text)
+          ? null
+          : pendingHomeworkCheckin;
       let planningError = "";
       if (updatePlan && dayIsReady(nextKnown)) {
         try {
@@ -482,6 +634,7 @@ export default function NotionDailyPlanner() {
             new Date(),
             personal.state.calendars,
             personal.state.fitness,
+            homeworkProgress,
           );
         } catch (e) {
           planningError =
@@ -503,6 +656,7 @@ export default function NotionDailyPlanner() {
       }
       setPlan(nextPlan);
       setApproved(nextApproved);
+      setPendingHomeworkCheckin(nextPending);
       setDraft("");
       try {
         await persist(
@@ -512,6 +666,8 @@ export default function NotionDailyPlanner() {
           complete,
           nextPlan,
           nextApproved,
+          homeworkProgress,
+          nextPending,
         );
       } catch {
         planningError +=
@@ -529,7 +685,7 @@ export default function NotionDailyPlanner() {
     }
   }
   async function approve() {
-    if (!source || !plan) return;
+    if (!source || !plan || workActive.current || busy || savingDay) return;
     try {
       if (
         planCalendar.current !== calendarRevision ||
@@ -546,7 +702,8 @@ export default function NotionDailyPlanner() {
     }
   }
   async function draftWithoutAI(nextKnown: NotionDayContext) {
-    if (!source || !personal.state) return;
+    if (!source || !personal.state || workActive.current || busy || savingDay)
+      return;
     try {
       if (today() !== day)
         throw new Error("A new day has started. Reload to plan today.");
@@ -557,6 +714,7 @@ export default function NotionDailyPlanner() {
         new Date(),
         personal.state.calendars,
         personal.state.fitness,
+        homeworkProgress,
       );
       setKnown(nextKnown);
       planCalendar.current = calendarRevision;
@@ -577,6 +735,181 @@ export default function NotionDailyPlanner() {
       setError(
         e instanceof Error ? e.message : "Please review the day details.",
       );
+    }
+  }
+  const workRevision = stableJSON({ source, homeworkProgress });
+  async function updateHomework(
+    next: () => HomeworkWorkRecord[],
+    expected: string,
+    nextMessages: Message[] = messages,
+  ) {
+    if (
+      !source ||
+      workActive.current ||
+      requestActive.current ||
+      busy ||
+      savingDay
+    )
+      throw Error(
+        "Wait for the current request to finish. Your check-in has not been saved.",
+      );
+    if (expected !== workRevision)
+      throw Error(
+        "The list or work records changed after review. Review your check-in again.",
+      );
+    if (!personal.state || personal.error)
+      throw Error(
+        personal.error || "Your saved settings are still loading. Try again.",
+      );
+    workActive.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      const records = next();
+      let freshPlan: NotionDayPlan | null = null,
+        planningError = "";
+      if (dayIsReady(known)) {
+        try {
+          freshPlan = buildNotionDayPlan(
+            source,
+            known,
+            new Date(),
+            personal.state.calendars,
+            personal.state.fitness,
+            records,
+          );
+        } catch (error) {
+          planningError =
+            error instanceof Error
+              ? error.message
+              : "Review the remaining time before planning again.";
+        }
+      }
+      await persist(
+        source,
+        sample,
+        known,
+        nextMessages,
+        freshPlan,
+        false,
+        records,
+        null,
+      );
+      setHomeworkProgress(records);
+      setPendingHomeworkCheckin(null);
+      setMessages(nextMessages);
+      setPlan(freshPlan);
+      setApproved(false);
+      planCalendar.current = calendarRevision;
+      planActivities.current = activityRevision;
+      setSourceNotice(
+        freshPlan
+          ? "Your work record is saved. Review the new draft for the rest of today."
+          : "Your work record is saved. Your day details and conversation are kept.",
+      );
+      if (planningError)
+        setError("Your work record is saved. " + planningError);
+    } finally {
+      workActive.current = false;
+      setBusy(false);
+    }
+  }
+  async function confirmHomeworkProposal(
+    value: HomeworkCheckin,
+    userText?: string,
+  ) {
+    if (!pendingHomeworkCheckin || !source)
+      throw Error("There is no homework check-in waiting for review.");
+    verifyHomeworkCheckinReview(
+      pendingHomeworkCheckin,
+      source,
+      homeworkProgress,
+    );
+    if (
+      value.sourceKey !== pendingHomeworkCheckin.value.sourceKey ||
+      value.outcome !== pendingHomeworkCheckin.value.outcome
+    )
+      throw Error(
+        "The proposed homework action changed. Review a fresh proposal.",
+      );
+    const title =
+      source.items.find((item) => item.key === value.sourceKey)?.title ??
+      "Homework";
+    const edited =
+      value.minutes !== pendingHomeworkCheckin.value.minutes ||
+      value.remainingMinutes !== pendingHomeworkCheckin.value.remainingMinutes;
+    const recordedValue = edited
+      ? {
+          ...value,
+          note: (
+            `Reviewed correction: actual ${value.minutes ?? "unknown"} minutes; remaining ${value.remainingMinutes ?? "unspecified"} minutes. Original request: ` +
+            value.note
+          ).slice(0, 500),
+        }
+      : value;
+    const receipt =
+      value.outcome === "complete"
+        ? `Reported ${title} complete in Daylight. Notion is unchanged.`
+        : value.outcome === "set_aside"
+          ? `Set ${title} aside in Daylight for today. It is not marked complete.`
+          : value.outcome === "more_time"
+            ? `Updated ${title} to ${value.remainingMinutes} more focus minutes today. No actual work was inferred.`
+            : `Recorded ${value.minutes === null ? "your work report without an actual-time total" : value.minutes + " actual minutes"} for ${title}. The assignment is still unfinished.`;
+    const nextMessages: Message[] = [
+      ...messages,
+      ...(userText
+        ? [{ role: "user" as const, content: userText.trim() }]
+        : []),
+      {
+        role: "assistant" as const,
+        content: receipt + " Review the new day draft before using it.",
+      },
+    ].slice(-200);
+    await updateHomework(
+      () => appendHomeworkWork(homeworkProgress, recordedValue, source, sample),
+      workRevision,
+      nextMessages,
+    );
+  }
+  async function cancelHomeworkProposal(userText?: string) {
+    if (
+      !pendingHomeworkCheckin ||
+      !source ||
+      workActive.current ||
+      requestActive.current ||
+      savingDay ||
+      busy
+    )
+      throw Error("Wait for the current save before discarding this proposal.");
+    workActive.current = true;
+    setBusy(true);
+    try {
+      const nextMessages: Message[] = [
+        ...messages,
+        ...(userText
+          ? [{ role: "user" as const, content: userText.trim() }]
+          : []),
+        {
+          role: "assistant" as const,
+          content:
+            "Discarded the unsaved homework check-in. No work record or timetable was changed.",
+        },
+      ].slice(-200);
+      await persist(
+        source,
+        sample,
+        known,
+        nextMessages,
+        plan,
+        approved,
+        homeworkProgress,
+        null,
+      );
+      setMessages(nextMessages);
+      setPendingHomeworkCheckin(null);
+    } finally {
+      workActive.current = false;
+      setBusy(false);
     }
   }
   const selected =
@@ -666,6 +999,15 @@ export default function NotionDailyPlanner() {
                   <li key={item.key}>
                     <span>{item.subject}</span>
                     {item.title}
+                    {homeworkProgressFor(
+                      homeworkProgress,
+                      source.pageId,
+                      item.key,
+                    ).status === "complete" && (
+                      <small>
+                        Reported complete in Daylight · Notion unchanged
+                      </small>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -814,7 +1156,9 @@ export default function NotionDailyPlanner() {
                 </p>
                 {source && (
                   <button
-                    disabled={!brain.available || brain.thinking}
+                    disabled={
+                      !brain.available || brain.thinking || busy || savingDay
+                    }
                     onClick={() =>
                       void send(
                         "Help me plan today from my highlighted Notion list. Ask me about today’s events and anything else I want to do.",
@@ -842,6 +1186,19 @@ export default function NotionDailyPlanner() {
             )}
             <div ref={end} />
           </div>
+          {pendingHomeworkCheckin && source && (
+            <HomeworkProposalCard
+              key={pendingHomeworkCheckin.id}
+              proposal={pendingHomeworkCheckin}
+              source={source}
+              disabled={busy || savingDay || brain.thinking || brain.loading}
+              onApprove={(value) => confirmHomeworkProposal(value)}
+              onCancel={() => cancelHomeworkProposal()}
+              onEdit={(id, value) => {
+                pendingWorkEdits.current = { id, value };
+              }}
+            />
+          )}
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -867,7 +1224,7 @@ export default function NotionDailyPlanner() {
               disabled={
                 !source ||
                 !draft.trim() ||
-                !brain.available ||
+                (!brain.available && !pendingHomeworkCheckin) ||
                 brain.thinking ||
                 busy
               }
@@ -879,7 +1236,11 @@ export default function NotionDailyPlanner() {
             <DayDetailsReview
               known={known}
               disabled={
-                savingDay || brain.thinking || brain.loading || !personal.state
+                busy ||
+                savingDay ||
+                brain.thinking ||
+                brain.loading ||
+                !personal.state
               }
               onDraft={draftWithoutAI}
             />
@@ -897,7 +1258,7 @@ export default function NotionDailyPlanner() {
           <span>
             {plan
               ? approved
-                ? "Saved in this browser"
+                ? "Approved for today"
                 : "Draft · review before saving"
               : "Not planned yet"}
           </span>
@@ -912,7 +1273,8 @@ export default function NotionDailyPlanner() {
             <p>
               Available window: {plan.window}.{" "}
               {sample ? "This plan uses sample homework. " : ""}Nothing is
-              marked complete or written to Notion.
+              written to Notion. Homework check-ins below record what you
+              actually did.
             </p>
             <details>
               <summary>Confirmed events & suggested focus allowance</summary>
@@ -968,7 +1330,7 @@ export default function NotionDailyPlanner() {
               </details>
             )}
             <button
-              disabled={savingDay || approved || brain.thinking}
+              disabled={busy || savingDay || approved || brain.thinking}
               onClick={approve}
             >
               {approved ? "Saved for today" : "Use this plan"}
@@ -1004,6 +1366,34 @@ export default function NotionDailyPlanner() {
           </>
         )}
       </section>
+      {source && (
+        <DayHomeworkCheckin
+          source={source}
+          records={homeworkProgress}
+          revision={workRevision}
+          disabled={
+            busy ||
+            savingDay ||
+            brain.thinking ||
+            brain.loading ||
+            !personal.state ||
+            !!personal.error ||
+            !!pendingHomeworkCheckin
+          }
+          onRecord={(value: HomeworkCheckin, expected: string) =>
+            updateHomework(
+              () => appendHomeworkWork(homeworkProgress, value, source, sample),
+              expected,
+            )
+          }
+          onRemove={(id, record, expected) =>
+            updateHomework(
+              () => removeHomeworkWork(homeworkProgress, id, record),
+              expected,
+            )
+          }
+        />
+      )}
     </main>
   );
 }

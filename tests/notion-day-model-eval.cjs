@@ -19,6 +19,16 @@ const results = [];
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (...args) => {
   const response = await originalFetch(...args);
+  if (typeof args[1]?.body === "string") {
+    const body = JSON.parse(args[1].body);
+    if (
+      body.format?.properties?.homeworkCheckin &&
+      !body.format?.properties?.dailyContext
+    ) {
+      const raw = await response.clone().json();
+      console.log("SYNTHETIC ACTION " + (raw.message?.content ?? raw.error));
+    }
+  }
   if (!response.ok)
     console.error(
       "Synthetic model evaluation HTTP failure",
@@ -156,6 +166,35 @@ async function ask(name, messages, known = emptyNotionDay(), extra = {}) {
   assert.deepEqual(calendar.dailyContext, correction.dailyContext);
   console.log(
     "PASS real reply reads the imported event time without adding or changing appointments.",
+  );
+  const work = await ask(
+    "actual homework and remaining focus",
+    [
+      {
+        role: "user",
+        content:
+          "I spent 20 minutes on Review chapter and I still need 10 more minutes on it.",
+      },
+    ],
+    correction.dailyContext,
+  );
+  assert.equal(work.homeworkCheckin?.sourceKey, "q");
+  assert.equal(work.homeworkCheckin?.outcome, "worked");
+  assert.equal(work.homeworkCheckin?.minutes, 20);
+  assert.equal(work.homeworkCheckin?.remainingMinutes, 10);
+  assert.deepEqual(work.dailyContext, correction.dailyContext);
+  console.log(
+    "PASS real work proposal separates actual minutes and requested remaining focus without applying it.",
+  );
+  const done = await ask(
+    "completed assignment with unknown actual time",
+    [{ role: "user", content: "I finished Review chapter." }],
+    correction.dailyContext,
+  );
+  assert.equal(done.homeworkCheckin?.outcome, "complete");
+  assert.equal(done.homeworkCheckin?.minutes, null);
+  console.log(
+    "PASS real completed proposal keeps unreported actual time unknown.",
   );
 })().catch((e) => {
   console.error(e);

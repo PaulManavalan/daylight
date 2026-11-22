@@ -55,7 +55,11 @@ export default function AccountSyncPanel() {
       for (const [day, payload] of Object.entries(local.focused?.days ?? {}))
         changes.push({
           key: "day:" + day,
-          payload,
+          payload: {
+            ...payload,
+            approved: false,
+            pendingHomeworkCheckin: null,
+          },
           expectedSequence: account!.document("day:" + day).sequence,
         });
       if (!changes.length)

@@ -15,6 +15,11 @@ import {
 import type { RunningListSource } from "./notion-daily-source";
 import type { Task } from "./types";
 import {
+  homeworkProgressFor,
+  homeworkProgressSchema,
+  type HomeworkWorkRecord,
+} from "./day-homework-progress";
+import {
   fitnessActivitiesForDate,
   emptyFitness,
   type FitnessState,
@@ -61,6 +66,7 @@ export function buildNotionDayPlan(
   now = new Date(),
   calendars: CalendarSnapshot = emptyCalendars(),
   fitness: FitnessState = emptyFitness(),
+  homeworkProgress: HomeworkWorkRecord[] = [],
 ): NotionDayPlan {
   const context = notionDayContextSchema.parse(raw);
   if (!dayIsReady(context))
@@ -155,23 +161,34 @@ export function buildNotionDayPlan(
     )
       fixed.push(event);
   }
-  const tasks: Task[] = selected.map((item) => ({
-    id: "notion:" + item.key,
-    title: item.title,
-    subject: item.subject ?? "Notion",
-    description:
-      "Suggested focus block, not an estimate of total assignment duration.",
-    deadline: null,
-    estimated_minutes: focus,
-    remaining_minutes: focus,
-    priority: "medium",
-    energy_level: "medium",
-    status: "not_started",
-    user_id: "notion-day-proposal",
-    actual_minutes: 0,
-    created_at: now.toISOString(),
-    updated_at: now.toISOString(),
-  }));
+  const records = homeworkProgressSchema
+    .parse(homeworkProgress)
+    .filter((record) => record.sample === (source.pageId === "sample"));
+  const focusProgress = new Map(
+    selected.map((item) => [
+      item.key,
+      homeworkProgressFor(records, source.pageId, item.key, focus),
+    ]),
+  );
+  const tasks: Task[] = selected
+    .filter((item) => focusProgress.get(item.key)!.remaining > 0)
+    .map((item) => ({
+      id: "notion:" + item.key,
+      title: item.title,
+      subject: item.subject ?? "Notion",
+      description:
+        "Suggested focus block, not an estimate of total assignment duration.",
+      deadline: null,
+      estimated_minutes: focus,
+      remaining_minutes: focusProgress.get(item.key)!.remaining,
+      priority: "medium",
+      energy_level: "medium",
+      status: "not_started",
+      user_id: "notion-day-proposal",
+      actual_minutes: 0,
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+    }));
   const activityNames = new Set(
     activities.flatMap((activity) => [
       activity.title.toLowerCase(),
@@ -200,6 +217,14 @@ export function buildNotionDayPlan(
     `${focus}-minute focus blocks are suggested time to spend today, not estimates that whole assignments will be finished.`,
     `${context.focusBudget ?? 180} minutes is ${context.focusBudget === null ? "the suggested" : "your requested"} focus allowance, with breaks and ${reserve} minutes kept free.`,
   ];
+  const actualMinutes = records.reduce(
+    (total, record) => total + (record.minutes ?? 0),
+    0,
+  );
+  if (records.length)
+    assumptions.push(
+      `${actualMinutes} minutes of explicitly recorded homework count against today's focus allowance. Unknown actual time stays unknown. Local check-ins do not change Notion.`,
+    );
   if (activities.length)
     assumptions.push(
       `${trainingMinutes} minutes of explicitly selected training are considered in addition to the focus allowance, within the available window. Whole training blocks are reserved before other flexible work when priorities are equal. Nothing prescribes extra exercise or confirms completion. Fixed team practices belong in your calendar.`,
@@ -255,7 +280,17 @@ export function buildNotionDayPlan(
       updated_at: now.toISOString(),
     });
   }
-  const state = { preferences, fixed, sessions: [], history: [] },
+  const history = records
+    .filter((record) => (record.minutes ?? 0) > 0)
+    .map((record) => ({
+      id: record.id,
+      taskId: "notion:" + record.sourcePageId + ":" + record.sourceKey,
+      title: record.title,
+      response: "Making progress" as const,
+      minutes: record.minutes!,
+      at: record.recordedAt,
+    }));
+  const state = { preferences, fixed, sessions: [], history },
     result = plan(
       tasks,
       state,
@@ -304,6 +339,17 @@ export function buildNotionDayPlan(
       "Unplaced focus block",
     reason: item.reason,
   }));
+  for (const item of selected) {
+    const progress = focusProgress.get(item.key)!;
+    if (progress.remaining === 0 && progress.status !== "complete")
+      deferred.push({
+        title: item.title,
+        reason:
+          progress.status === "set_aside"
+            ? "Set aside in your work check-in; the assignment is not marked complete."
+            : "Today's suggested focus time has been used. The assignment is not marked complete; add more time if you want to continue.",
+      });
+  }
   for (const item of source.items.filter(
     (item) => item.yellowHighlighted && skipped.has(item.key),
   ))

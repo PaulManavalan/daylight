@@ -187,6 +187,18 @@ export default function DayBriefingWorkspace() {
             <NewsBriefingPanel />
             <section className={styles.panel}>
               <h2>Homework you chose</h2>
+              {brief.homeworkProgress.length > 0 && (
+                <p>
+                  {brief.homeworkProgress
+                    .filter((record) => record.sample === brief.sample)
+                    .reduce(
+                      (total, record) => total + (record.minutes ?? 0),
+                      0,
+                    )}{" "}
+                  actual homework minutes recorded today.{" "}
+                  <Link href="/day">Review work check-ins →</Link>
+                </p>
+              )}
               <p className={styles.muted}>
                 {brief.sourceReadAt
                   ? "Notion snapshot read " +

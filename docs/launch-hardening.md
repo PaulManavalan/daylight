@@ -28,6 +28,10 @@ Real inference with the already installed Gemma model initially exposed a repeat
 
 Browser scenarios verify refresh without a discard dialog, saved-ID reuse after reload, unchanged approval, changed highlights with a new draft, failed-source preservation, more than six exchanges, read-back without replanning, mobile layout and backup round trips. Real Notion OAuth and hosted AI acceptance still need configured-service verification.
 
+## Reviewed homework progress — November 22
+
+Conversational reports now stage an editable review before recording actual work, completion, setting work aside or requesting more focus. Saving produces a fresh timetable draft and never writes to Notion. Unknown actual time stays unknown. Stale reviews, backup restores, midnight and storage failure are covered; see [homework-progress.md](homework-progress.md). Installed-model testing exposed both completion abstention and false hypothetical completion claims. Exact unique-title recovery and a bounded reply repair address the reproduced cases; broad model reliability remains unverified.
+
 ## Hosted-model verification remains open
 
 The November 22 real WebGPU retry found a usable GPU and successfully reached the approved Qwen model's configuration and runtime hosts. The weight redirect host `us.aws.cdn.hf.co` failed DNS resolution in Edge and timed out in a separate Node HEAD check. Actual browser inference was not reached. `tests/browser-day-model-live.cjs` reproduces the focused flow with local AI blocked, synthetic records and the existing isolated profile; its explicit download opt-in is still required. This evidence is a failed asset-delivery test, not proof that hosted chat works or that every user's network will fail. No different model or paid fallback was enabled.

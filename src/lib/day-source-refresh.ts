@@ -4,6 +4,10 @@ import {
   type NotionDayContext,
 } from "./notion-day-model";
 import type { NotionDayPlan } from "./notion-day-plan";
+import {
+  homeworkProgressFor,
+  type HomeworkWorkRecord,
+} from "./day-homework-progress";
 /** Reading the running list updates homework, not the user's confirmed day or conversation. */
 export function refreshDaySource(
   before: RunningListSource,
@@ -58,6 +62,7 @@ export function daySourceContext(
   known: NotionDayContext,
   message: string,
   compact = false,
+  records: HomeworkWorkRecord[] = [],
 ) {
   const focus = new Set(known.focusOrder),
     skip = new Set(known.skipKeys),
@@ -77,14 +82,28 @@ export function daySourceContext(
     title: string;
     subject: string | null;
     today: boolean;
+    reportedStatus?: string;
+    remainingFocusMinutes?: number;
   }[] = [];
   let used = 0;
   for (const item of [...active].sort((a, b) => rank(a) - rank(b))) {
+    const progress = homeworkProgressFor(
+      records,
+      source.pageId,
+      item.key,
+      known.focusMinutes ?? 25,
+    );
     const entry = {
       key: item.key,
       title: item.title.slice(0, compact ? 140 : 250),
       subject: item.subject,
       today: item.yellowHighlighted,
+      ...(progress.status === "unreported"
+        ? {}
+        : {
+            reportedStatus: progress.status,
+            remainingFocusMinutes: progress.remaining,
+          }),
     };
     const size = JSON.stringify(entry).length;
     if (

@@ -193,6 +193,19 @@ export function parseWorkspaceBackup(text: string): WorkspaceBackup {
   }
   return {
     ...data,
+    ...(data.focused
+      ? {
+          focused: {
+            ...data.focused,
+            days: Object.fromEntries(
+              Object.entries(data.focused.days).map(([day, session]) => [
+                day,
+                { ...session, pendingHomeworkCheckin: null },
+              ]),
+            ),
+          },
+        }
+      : {}),
     tasks: data.tasks.map((t) => ({
       ...t,
       user_id: "local-demo",

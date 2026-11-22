@@ -229,6 +229,43 @@ test("shared-tab storage locking preserves independent documents and rejects sta
     "One",
   );
 });
+test("a reviewed multi-document import commits locally as one change and rejects stale targets before replacing anything", async () => {
+  const cloud = new Cloud(),
+    storage = new Memory(),
+    account = new AccountWorkspace(storage, A, cloud, mutex());
+  await account.sync();
+  await account.update("personal", personal("Existing"), 0);
+  const before = storage.getItem(account.key);
+  await assert.rejects(
+    () =>
+      account.updateMany([
+        { key: "sat", payload: defaultSat(), expectedSequence: 0 },
+        {
+          key: "personal",
+          payload: personal("Stale import"),
+          expectedSequence: 0,
+        },
+      ]),
+    /changed after/,
+  );
+  assert.equal(storage.getItem(account.key), before);
+  assert.equal(account.document("sat").payload, null);
+  await account.updateMany([
+    { key: "sat", payload: defaultSat(), expectedSequence: 0 },
+    {
+      key: "personal",
+      payload: personal("Reviewed import"),
+      expectedSequence: 1,
+    },
+  ]);
+  await account.sync();
+  assert.equal(cloud.rows.size, 2);
+  assert.equal(
+    (cloud.rows.get("personal")?.payload as { displayName: string })
+      .displayName,
+    "Reviewed import",
+  );
+});
 test("cache failures, unknown document keys and foreign server rows never reset saved data", async () => {
   const storage = new Memory(),
     cloud = new Cloud(),

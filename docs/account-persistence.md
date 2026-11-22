@@ -1,6 +1,6 @@
 # Account persistence foundation
 
-November 21, 2026. This increment adds the database migration, validated transport and synchronization engine. It does **not yet switch the existing screens from browser-local storage**, apply a migration to a real Supabase project, or prove live account synchronization. Those remain launch gates.
+November 21, 2026. The database migration, validated transport and synchronization engine are now connected to the focused `/day` screens when a Supabase account is configured and signed in. No migration has been applied to a real Supabase project and live account synchronization is not yet verified. Those remain launch gates.
 
 ## Document model and ownership
 
@@ -22,12 +22,22 @@ The adapter currently bounds a document to 2 MB and a batch to 4 MB/200 changes.
 
 The migration executes against embedded PostgreSQL in the development-only PGlite dependency. Tests cover actual role grants, row isolation, anonymous denial, cross-owner mutation attempts, direct-write denial, revision conflicts, batch rollback and tombstones. A second integration check exercises the outbox against that SQL with two devices for one account and a separate second account. Additional engine tests cover offline reload, lost responses, edits during upload, local locking and corrupt/foreign data. This validates PostgreSQL behavior with synthetic identities; it does not validate Supabase's deployed JWT gateway, production project configuration or real authentication sessions.
 
-## Required UI integration and launch checks
+## Focused screen integration checkpoint
 
-1. Add one focused-workspace identity provider; block rendering until the identity/cache is known, and unmount account data on identity changes.
-2. Convert personal-domain saves to awaited repository writes. Keep local mode intact. Preserve the form's original revision/sequence through asynchronous operations.
-3. Bind focused daily conversations/plans, SAT attempts and the connected Today overview to the same account context. Send the account bearer token to Notion/Google operations. Local private development snapshots must remain available only in local mode.
-4. Show queued/offline/conflict states and concrete two-version review. Provide reviewed local-to-account import, export, interrupted-operation recovery and scoped deletion. Never export or restore local-demo records under an account label.
+The focused layout checks identity before mounting its data consumers, then completes the initial cloud check before showing the account workspace. A verified existing account cache can open after a failed network check; a first-time failure does not create an empty account over unknown server data. Identity changes unmount the previous workspace. The banner distinguishes queued/offline/conflict states from confirmed account saves.
+
+Personal-domain writes now await the durable local outbox, including meal/recipe journals, workout logs and routines, calendar imports and preferences. The personal metadata stamp advances monotonically and stale asynchronous closures cannot save over a newer local state. Daily source/conversation/approval and focused SAT attempts use their own account documents. The Today overview reads that same account context. A changed saved day clears the local approved view and requires reload instead of exporting an older timetable. Notion calls use the current account bearer token, and local private development snapshots are not fetched in account mode.
+
+Preferences includes explicit two-version conflict review, account recovery export, and a reviewed copy of existing local personal/SAT/day records. Copying preserves the local workspace, pins each target's reviewed sequence, and stages a previous-account recovery copy. Local backup/restore controls are shown only in local mode, so an account label cannot accidentally export or replace unrelated local-demo data. Account recovery import and scoped account deletion remain to be implemented. The legacy full workspace is also still separate for planning/SAT storage and needs consolidation.
+
+`scripts/test-account-browser.cjs` builds a synthetic public Supabase-client configuration, exercises the real browser SDK against a mocked HTTP provider, and always restores the normal build. The scenario covers two browser contexts for one account, a separate account, offline save/reload, conflict choice, food and workout preservation, SAT/day transfer, explicit local copy/cancel, credential exclusion, local-snapshot exclusion, sign-out and mobile layout. This complements the PostgreSQL ownership tests; it does not substitute for real Supabase authentication and device testing. The immutable running preview is unaffected by the temporary test builds.
+
+## Remaining integration and launch checks
+
+1. Broaden real-device and concurrent-edit checks for the focused identity provider and awaited personal-domain writes.
+2. Verify Notion/Google account authorization in the deployed environment, with local private development snapshots remaining local-only.
+3. Complete reviewed account recovery import, interrupted-operation recovery UI and scoped account deletion. Never export or restore local-demo records under an account label.
+4. Continue improving conflict summaries and source freshness while preserving pending drafts and approval checks.
 5. Connect the legacy full workspace's planning/SAT records to the same account model without discarding relational tasks or existing local records.
 6. Apply the additive migration in the intended project and verify real sign-in, two-account isolation, two-browser/device synchronization, sign-out, offline edits, conflicting edits, recovery and deletion. No migration or account service has been enabled remotely by this increment.
 

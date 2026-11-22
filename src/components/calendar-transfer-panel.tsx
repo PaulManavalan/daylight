@@ -11,7 +11,7 @@ import type { PersonalWorkspace } from "@/lib/personal-workspace";
 import styles from "./notion-daily-planner.module.css";
 interface Props {
   state: PersonalWorkspace;
-  save: (next: PersonalWorkspace) => PersonalWorkspace;
+  save: (next: PersonalWorkspace) => Promise<PersonalWorkspace>;
   disabled: boolean;
 }
 export default function CalendarTransferPanel({
@@ -54,10 +54,13 @@ export default function CalendarTransferPanel({
       setLoading(false);
     }
   }
-  function apply() {
+  async function apply() {
     if (!preview) return;
     try {
-      save({ ...state, calendars: replaceCalendar(state.calendars, preview) });
+      await save({
+        ...state,
+        calendars: replaceCalendar(state.calendars, preview),
+      });
       setMessage(
         `${preview.id}: ${preview.events.length} busy events saved in this browser. Your previous timetable needs a fresh draft.`,
       );
@@ -67,7 +70,7 @@ export default function CalendarTransferPanel({
       setError(e instanceof Error ? e.message : "Could not save the calendar.");
     }
   }
-  function remove(id: string) {
+  async function remove(id: string) {
     if (
       !confirm(
         "Stop using this imported calendar in Daylight? This does not change Google or Apple Calendar.",
@@ -75,7 +78,7 @@ export default function CalendarTransferPanel({
     )
       return;
     try {
-      save({
+      await save({
         ...state,
         calendars: {
           ...state.calendars,

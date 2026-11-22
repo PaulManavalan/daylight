@@ -166,6 +166,61 @@ export class AccountWorkspace {
   recovery() {
     return this.storage.getItem(this.key);
   }
+  keys() {
+    this.readCache();
+    return Object.keys(this.cache.documents).sort();
+  }
+  async updateMany(
+    changes: { key: string; payload: unknown; expectedSequence: number }[],
+  ) {
+    if (
+      !changes.length ||
+      changes.length > 200 ||
+      new Set(changes.map((c) => c.key)).size !== changes.length
+    )
+      throw Error("Choose 1–200 distinct account records.");
+    const prepared = changes.map((change) => ({
+      ...change,
+      payload: validateDocument(change.key, change.payload),
+    }));
+    await this.lock(async () => {
+      if (this.disposed) throw Error("This workspace is no longer active.");
+      this.readCache();
+      if (!this.cache.ready)
+        throw Error("Load your account before importing records.");
+      const next = structuredClone(this.cache);
+      for (const change of prepared) {
+        const previous = next.documents[change.key] ?? missing();
+        if (previous.sequence !== change.expectedSequence)
+          throw Error(
+            "Account data changed after this review. Review the import again.",
+          );
+        next.documents[change.key] = {
+          payload: change.payload,
+          revision: previous.revision,
+          sequence: previous.sequence + 1,
+          dirty: true,
+        };
+      }
+      if (
+        new TextEncoder().encode(
+          JSON.stringify(
+            prepared.map((c) => ({
+              key: c.key,
+              expectedRevision: next.documents[c.key].revision,
+              payload: c.payload,
+            })),
+          ),
+        ).length > 4194304
+      )
+        throw Error("Import fewer records at a time; this batch exceeds 4 MB.");
+      this.writeCache(next);
+    });
+    this.publish(
+      Object.keys(this.cache.conflicts).length ? "conflict" : "queued",
+      "Reviewed records are saved on this device and waiting to sync.",
+    );
+  }
   async update(key: string, payload: unknown, expectedSequence: number) {
     const valid = validateDocument(key, payload);
     await this.lock(async () => {
@@ -309,9 +364,24 @@ export class AccountWorkspace {
           );
           return;
         }
-        const pending = Object.entries(this.cache.documents)
-          .filter(([, entry]) => entry.dirty)
-          .slice(0, 200);
+        const pending: [string, Entry][] = [];
+        let batchBytes = 2;
+        for (const [key, entry] of Object.entries(this.cache.documents).sort(
+          ([a], [b]) => a.localeCompare(b),
+        )) {
+          if (!entry.dirty) continue;
+          const bytes =
+            new TextEncoder().encode(
+              JSON.stringify({
+                key,
+                expectedRevision: entry.revision,
+                payload: entry.payload,
+              }),
+            ).length + (pending.length ? 1 : 0);
+          if (pending.length >= 200 || batchBytes + bytes > 4194304) break;
+          pending.push([key, entry]);
+          batchBytes += bytes;
+        }
         if (!pending.length) {
           this.publish("synced", "Saved to your account.");
           return;

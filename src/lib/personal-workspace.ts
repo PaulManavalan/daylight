@@ -108,7 +108,9 @@ export class PersonalWorkspaceStore {
       );
     const parsed = personalWorkspaceSchema.safeParse({
       ...next,
-      updatedAt: new Date().toISOString(),
+      updatedAt: new Date(
+        Math.max(Date.now(), Date.parse(next.updatedAt) + 1),
+      ).toISOString(),
     });
     if (!parsed.success)
       throw new Error(

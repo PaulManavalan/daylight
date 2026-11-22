@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useAccountWorkspace } from "./account-workspace-context";
 import { usePersonalWorkspace } from "./use-personal-workspace";
 import { personalProfileSchema } from "@/lib/personal-workspace";
 import { localDate } from "@/lib/nutrition";
@@ -309,6 +310,7 @@ function ExerciseEditor({
 }
 
 export default function FitnessWorkspace() {
+  const { account } = useAccountWorkspace();
   const workspace = usePersonalWorkspace();
   const [today, setToday] = useState(""),
     [section, setSection] = useState<Section>("overview"),
@@ -351,6 +353,7 @@ export default function FitnessWorkspace() {
       setPreferences(structuredClone(fitness.preferences));
   }, [fitness, preferences]);
   useEffect(() => {
+    if (account) return;
     void fetch("/api/personal-profile-snapshot", { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) return;
@@ -359,7 +362,7 @@ export default function FitnessWorkspace() {
           setKnownTraining(profile.data.trainingPreferences);
       })
       .catch(() => {});
-  }, []);
+  }, [account]);
   function reviewTrainingPreferences() {
     if (!preferences || !knownTraining) return;
     const preserveRestrictions =
@@ -397,11 +400,11 @@ export default function FitnessWorkspace() {
       url.pathname + url.search + url.hash,
     );
   }
-  function persist(next: FitnessState, success: string) {
+  async function persist(next: FitnessState, success: string) {
     if (!state) return false;
     try {
       if (workspace.error) throw new Error(workspace.error);
-      workspace.save({ ...state, fitness: next });
+      await workspace.save({ ...state, fitness: next });
       setMessage(success);
       setError("");
       return true;
@@ -414,9 +417,9 @@ export default function FitnessWorkspace() {
       return false;
     }
   }
-  function perform(action: () => void) {
+  async function perform(action: () => void | Promise<unknown>) {
     try {
-      action();
+      await action();
     } catch (cause) {
       setError(
         cause instanceof Error
@@ -499,10 +502,10 @@ export default function FitnessWorkspace() {
       );
       return;
     }
-    perform(() => {
+    void perform(async () => {
       const next = saveWorkoutLog(fitness, parsed.data, today);
       if (
-        persist(
+        await persist(
           next,
           log.id
             ? "Session updated. Your history reflects your edited report."
@@ -567,9 +570,9 @@ export default function FitnessWorkspace() {
       );
       return;
     }
-    perform(() => {
+    void perform(async () => {
       if (
-        persist(
+        await persist(
           saveRoutine(fitness, parsed.data),
           routine.id
             ? "Routine updated. Existing planned sessions keep their original details."
@@ -595,9 +598,9 @@ export default function FitnessWorkspace() {
   }
   function submitPlan() {
     if (!fitness) return;
-    perform(() => {
+    void perform(async () => {
       if (
-        persist(
+        await persist(
           planRoutine(fitness, selectedRoutine, planDate, includeInDay),
           "Session planned. Completion still needs your report." +
             (includeInDay
@@ -659,7 +662,10 @@ export default function FitnessWorkspace() {
         </h1>
         <p>
           Your sessions, routines and plans in one place—from team practice to a
-          run or a mobility session. Records stay in this browser.
+          run or a mobility session.{" "}
+          {account
+            ? "Records belong to your account, with a draft kept on this device."
+            : "Records stay in this browser."}
         </p>
       </section>
       <nav className={styles.moduleNav} aria-label="Fitness sections">
@@ -1452,14 +1458,14 @@ export default function FitnessWorkspace() {
                       </button>
                       <button
                         className={styles.secondary}
-                        onClick={() => {
+                        onClick={async () => {
                           if (
                             confirm(
                               "Remove this saved routine? Already planned sessions and completed logs will keep their recorded details.",
                             )
                           ) {
                             if (
-                              persist(
+                              await persist(
                                 {
                                   ...fitness,
                                   routines: fitness.routines.filter(

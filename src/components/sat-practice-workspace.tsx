@@ -1,7 +1,14 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { SatStore, satKey, type SatState } from "@/lib/sat";
+import {
+  SatStore,
+  satKey,
+  satStateSchema,
+  defaultSat,
+  type SatState,
+} from "@/lib/sat";
+import { useAccountWorkspace } from "./account-workspace-context";
 import {
   choosePractice,
   gradeAttempt,
@@ -15,9 +22,11 @@ import styles from "./notion-daily-planner.module.css";
 import css from "./sat-practice-workspace.module.css";
 
 export default function SatPracticeWorkspace() {
+  const { account } = useAccountWorkspace();
   const [loaded, setLoaded] = useState<{
       state: SatState;
       raw: string | null;
+      sequence?: number;
     } | null>(null),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
@@ -29,16 +38,31 @@ export default function SatPracticeWorkspace() {
     [seconds, setSeconds] = useState(0),
     [timed, setTimed] = useState(false);
   const started = useRef(0);
+  const seenSequence = useRef(-1),
+    saving = useRef(false);
   useEffect(() => {
     function load() {
       try {
-        setLoaded(new SatStore(localStorage, "local-demo").load());
+        if (account) {
+          const entry = account.document("sat");
+          if (entry.sequence === seenSequence.current) return;
+          seenSequence.current = entry.sequence;
+          setLoaded({
+            state:
+              entry.payload === null
+                ? defaultSat()
+                : satStateSchema.parse(entry.payload),
+            raw: null,
+            sequence: entry.sequence,
+          });
+        } else setLoaded(new SatStore(localStorage, "local-demo").load());
         setError("");
       } catch (e) {
         setError((e as Error).message);
       }
     }
     load();
+    if (account) return account.subscribe(load);
     const listener = (e: StorageEvent) => {
       if (e.key === satKey("local-demo") || e.key === null) {
         load();
@@ -47,7 +71,7 @@ export default function SatPracticeWorkspace() {
     };
     window.addEventListener("storage", listener);
     return () => window.removeEventListener("storage", listener);
-  }, []);
+  }, [account]);
   useEffect(() => {
     if (!questions.length || answer) return;
     const timer = setInterval(
@@ -62,9 +86,26 @@ export default function SatPracticeWorkspace() {
     );
     return () => clearInterval(timer);
   }, [questions, index, answer]);
-  function save(state: SatState) {
+  async function save(state: SatState) {
     if (!loaded) return false;
+    if (saving.current) return false;
+    saving.current = true;
     try {
+      if (account) {
+        const entry = await account.update(
+          "sat",
+          satStateSchema.parse(state),
+          loaded.sequence ?? 0,
+        );
+        seenSequence.current = entry.sequence;
+        setLoaded({
+          state: satStateSchema.parse(entry.payload),
+          raw: null,
+          sequence: entry.sequence,
+        });
+        setError("");
+        return true;
+      }
       const raw = new SatStore(localStorage, "local-demo").save(
         state,
         loaded.raw,
@@ -75,6 +116,8 @@ export default function SatPracticeWorkspace() {
     } catch (e) {
       setError((e as Error).message);
       return false;
+    } finally {
+      saving.current = false;
     }
   }
   function start() {
@@ -89,7 +132,7 @@ export default function SatPracticeWorkspace() {
   }
   const question = questions[index],
     finished = questions.length > 0 && index >= questions.length;
-  function submit() {
+  async function submit() {
     if (!loaded || !question || choice === null || answer) return;
     const attempt: PracticeAttempt = {
       id: crypto.randomUUID(),
@@ -102,11 +145,14 @@ export default function SatPracticeWorkspace() {
       ),
     };
     if (
-      save({ ...loaded.state, attempts: [...loaded.state.attempts, attempt] })
+      await save({
+        ...loaded.state,
+        attempts: [...loaded.state.attempts, attempt],
+      })
     )
       setAnswer(attempt);
   }
-  function addError() {
+  async function addError() {
     if (!loaded || !question || !answer) return;
     const note = `Daylight original ${question.id}. I chose ${question.choices[answer.choice]}. Correct answer: ${question.choices[question.answer]}. ${question.explanation}`;
     if (loaded.state.errors.some((e) => e.note === note)) {
@@ -114,7 +160,7 @@ export default function SatPracticeWorkspace() {
       return;
     }
     if (
-      save({
+      await save({
         ...loaded.state,
         errors: [
           {

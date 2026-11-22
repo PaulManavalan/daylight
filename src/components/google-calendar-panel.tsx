@@ -22,7 +22,7 @@ import styles from "./notion-daily-planner.module.css";
 import css from "./google-calendar-panel.module.css";
 type Props = {
   state: PersonalWorkspace;
-  save: (state: PersonalWorkspace) => PersonalWorkspace;
+  save: (state: PersonalWorkspace) => Promise<PersonalWorkspace>;
   disabled: boolean;
 };
 type Review = {
@@ -105,13 +105,16 @@ export default function GoogleCalendarPanel({ state, save, disabled }: Props) {
       if (live.current) setBusy(false);
     }
   }
-  function invalidateSavedReads() {
+  async function invalidateSavedReads() {
     const current = latestState.current,
       calendars = current.calendars.calendars.map((c) =>
         c.id.startsWith("google-live:") ? { ...c, needsRefresh: true } : c,
       );
     if (calendars.some((c) => c.needsRefresh))
-      save({ ...current, calendars: { ...current.calendars, calendars } });
+      await save({
+        ...current,
+        calendars: { ...current.calendars, calendars },
+      });
     setPreview(null);
   }
   function prepare(
@@ -328,9 +331,9 @@ export default function GoogleCalendarPanel({ state, save, disabled }: Props) {
               )}
               <button
                 disabled={locked}
-                onClick={() => {
+                onClick={async () => {
                   try {
-                    save({
+                    await save({
                       ...state,
                       calendars: replaceCalendar(state.calendars, preview),
                     });
@@ -520,7 +523,7 @@ export default function GoogleCalendarPanel({ state, save, disabled }: Props) {
                           : "creation") +
                     ". Read and review the calendar again before replanning.",
                 );
-                invalidateSavedReads();
+                await invalidateSavedReads();
               })
             }
           >

@@ -29,6 +29,11 @@ import {
 import { runningSourceSchema } from "@/lib/notion-running-schema";
 import type { RunningListSource } from "@/lib/notion-daily-source";
 import styles from "./notion-daily-planner.module.css";
+import {
+  useAccountWorkspace,
+  accountAuthHeaders,
+} from "./account-workspace-context";
+import { stableJSON } from "@/lib/workspace-documents";
 
 const sourceSchema = runningSourceSchema;
 const messageSchema = z.object({
@@ -70,7 +75,10 @@ function sampleSource(): RunningListSource {
   };
 }
 export default function NotionDailyPlanner() {
-  const brain = useAssistantBrain("notion-day-v1"),
+  const { account, owner } = useAccountWorkspace();
+  const brain = useAssistantBrain(
+      owner === "local-demo" ? "notion-day-v1" : "notion-day-v1." + owner,
+    ),
     personal = usePersonalWorkspace();
   const [source, setSource] = useState<RunningListSource | null>(null),
     [sample, setSample] = useState(false),
@@ -81,6 +89,7 @@ export default function NotionDailyPlanner() {
     [approved, setApproved] = useState(false),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
+    [savingDay,setSavingDay]=useState(false),
     [connected, setConnected] = useState(false),
     [configured, setConfigured] = useState(false),
     [url, setUrl] = useState(""),
@@ -91,15 +100,24 @@ export default function NotionDailyPlanner() {
     savedVersion = useRef<string | null>(null),
     planCalendar = useRef(JSON.stringify(emptyCalendars())),
     planActivities = useRef("[]");
+  const savedSequence = useRef(0),
+    writingDay = useRef<string | null>(null);
   useEffect(() => {
     setDay(today());
     try {
-      recoverLocalRestore(localStorage);
-      const raw = localStorage.getItem("daylight.notion-day.v1." + today());
+      if (!account) recoverLocalRestore(localStorage);
+      const entry = account?.document("day:" + today());
+      savedSequence.current = entry?.sequence ?? 0;
+      const raw = account
+        ? entry?.payload
+          ? JSON.stringify(entry.payload)
+          : null
+        : localStorage.getItem("daylight.notion-day.v1." + today());
       savedVersion.current = raw;
       if (raw) {
         const saved = savedSchema.parse(JSON.parse(raw));
         setSource(saved.source);
+        if (!saved.sample) setUrl(saved.source.pageId);
         setSample(saved.sample);
         setKnown(saved.known);
         setMessages(saved.messages);
@@ -114,25 +132,52 @@ export default function NotionDailyPlanner() {
         "The previous day draft could not be restored. It has not been overwritten.",
       );
     }
-    void fetch("/api/notion", { cache: "no-store" })
+    void accountAuthHeaders(owner)
+      .then((headers) => fetch("/api/notion", { cache: "no-store", headers }))
       .then((r) => r.json())
       .then((data) => {
         setConnected(Boolean(data.connected));
         setConfigured(Boolean(data.configured));
       })
       .catch(() => {});
-  }, []);
+  }, [account, owner]);
   useEffect(() => {
+    const date = today(),
+      key = "daylight.notion-day.v1." + date;
+    const changed = () => {
+      if (account) {
+        const entry = account.document("day:" + date);
+        if (
+          entry.sequence === savedSequence.current ||
+          writingDay.current === stableJSON(entry.payload)
+        )
+          return;
+      } else if (localStorage.getItem(key) === savedVersion.current) return;
+      setPlan(null);
+      setApproved(false);
+      setError(
+        "This saved day changed in another tab or device. Your conversation draft is kept; reload before saving or exporting.",
+      );
+    };
+    if (account) return account.subscribe(changed);
+    const listener = (event: StorageEvent) => {
+      if (event.key === key || event.key === null) changed();
+    };
+    window.addEventListener("storage", listener);
+    return () => window.removeEventListener("storage", listener);
+  }, [account]);
+  useEffect(() => {
+    if (account) return;
     void fetch("/api/running-list-snapshot", { cache: "no-store" })
       .then(async (response) => {
         if (response.ok) setSnapshot(sourceSchema.parse(await response.json()));
       })
       .catch(() => {});
-  }, []);
+  }, [account]);
   useEffect(() => {
     end.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [messages, brain.thinking]);
-  function persist(
+  async function persist(
     nextSource: RunningListSource,
     nextSample: boolean,
     nextKnown: NotionDayContext,
@@ -140,7 +185,7 @@ export default function NotionDailyPlanner() {
     nextPlan: NotionDayPlan | null,
     nextApproved: boolean,
   ) {
-    if (localStorage.getItem(RESTORE_PENDING) !== null)
+    if (!account && localStorage.getItem(RESTORE_PENDING) !== null)
       throw new Error(
         "Finish the interrupted workspace restore before saving this day.",
       );
@@ -159,6 +204,24 @@ export default function NotionDailyPlanner() {
       ),
     });
     const key = "daylight.notion-day.v1." + day;
+    if (account) {
+      if(writingDay.current!==null)throw Error('Wait for the current day draft to finish saving.');
+      setSavingDay(true);
+      writingDay.current = stableJSON(value);
+      try {
+        const entry = await account.update(
+          "day:" + day,
+          value,
+          savedSequence.current,
+        );
+        savedSequence.current = entry.sequence;
+        savedVersion.current = JSON.stringify(entry.payload);
+      } finally {
+        writingDay.current = null;
+        setSavingDay(false);
+      }
+      return;
+    }
     if (localStorage.getItem(key) !== savedVersion.current)
       throw new Error(
         "This day changed in another tab. Reload before saving to avoid overwriting it.",
@@ -167,8 +230,9 @@ export default function NotionDailyPlanner() {
     localStorage.setItem(key, encoded);
     savedVersion.current = encoded;
   }
-  function useSource(next: RunningListSource, isSample: boolean) {
+  async function useSource(next: RunningListSource, isSample: boolean) {
     setSource(next);
+    if (!isSample) setUrl(next.pageId);
     setSample(isSample);
     setKnown(emptyNotionDay());
     setMessages([]);
@@ -176,7 +240,7 @@ export default function NotionDailyPlanner() {
     setApproved(false);
     setError("");
     try {
-      persist(next, isSample, emptyNotionDay(), [], null, false);
+      await persist(next, isSample, emptyNotionDay(), [], null, false);
     } catch {
       setError(
         "This list is available for this session, but could not be saved on this browser.",
@@ -186,7 +250,10 @@ export default function NotionDailyPlanner() {
   async function notion(body: unknown) {
     const response = await fetch("/api/notion", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        ...(await accountAuthHeaders(owner)),
+      },
       body: JSON.stringify(body),
     });
     const data = await response.json();
@@ -223,7 +290,7 @@ export default function NotionDailyPlanner() {
       const next = sourceSchema.parse(
         await notion({ op: "running-list", source: url }),
       );
-      useSource(next, false);
+      await useSource(next, false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not read the list.");
     } finally {
@@ -373,7 +440,14 @@ export default function NotionDailyPlanner() {
       setApproved(nextApproved);
       setDraft("");
       try {
-        persist(source, sample, nextKnown, complete, nextPlan, nextApproved);
+        await persist(
+          source,
+          sample,
+          nextKnown,
+          complete,
+          nextPlan,
+          nextApproved,
+        );
       } catch {
         planningError +=
           " Your conversation is available in this tab, but could not be saved on this browser.";
@@ -389,7 +463,7 @@ export default function NotionDailyPlanner() {
       requestActive.current = false;
     }
   }
-  function approve() {
+  async function approve() {
     if (!source || !plan) return;
     try {
       if (
@@ -399,14 +473,14 @@ export default function NotionDailyPlanner() {
         throw new Error(
           "Your calendars or selected training changed. Make a fresh draft first.",
         );
-      persist(source, sample, known, messages, plan, true);
+      await persist(source, sample, known, messages, plan, true);
       setApproved(true);
       setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save this plan.");
     }
   }
-  function draftWithoutAI(nextKnown: NotionDayContext) {
+  async function draftWithoutAI(nextKnown: NotionDayContext) {
     if (!source || !personal.state) return;
     try {
       if (today() !== day)
@@ -426,7 +500,7 @@ export default function NotionDailyPlanner() {
       setApproved(false);
       setError("");
       try {
-        persist(source, sample, nextKnown, messages, nextPlan, false);
+        await persist(source, sample, nextKnown, messages, nextPlan, false);
       } catch (e) {
         setError(
           e instanceof Error
@@ -567,17 +641,17 @@ export default function NotionDailyPlanner() {
                 required
                 placeholder="https://www.notion.so/…"
               />
-              <button disabled={busy || brain.thinking}>Read list</button>
+              <button disabled={busy || savingDay || brain.thinking}>Read list</button>
             </form>
           )}
           {source && !connected && configured && (
-            <button disabled={busy || brain.thinking} onClick={connect}>
+            <button disabled={busy || savingDay || brain.thinking} onClick={connect}>
               Connect Notion
             </button>
           )}
           {snapshot && (
             <button
-              disabled={busy || brain.thinking}
+              disabled={busy || savingDay || brain.thinking}
               onClick={() => useSource(snapshot, false)}
             >
               Use my local Notion snapshot
@@ -585,7 +659,7 @@ export default function NotionDailyPlanner() {
           )}
           <button
             className={styles.secondary}
-            disabled={busy || brain.thinking}
+            disabled={busy || savingDay || brain.thinking}
             onClick={() => {
               if (
                 !source ||
@@ -727,7 +801,7 @@ export default function NotionDailyPlanner() {
           {source && (
             <DayDetailsReview
               known={known}
-              disabled={brain.thinking || brain.loading || !personal.state}
+              disabled={savingDay || brain.thinking || brain.loading || !personal.state}
               onDraft={draftWithoutAI}
             />
           )}{" "}
@@ -814,7 +888,7 @@ export default function NotionDailyPlanner() {
                 ))}
               </details>
             )}
-            <button disabled={approved || brain.thinking} onClick={approve}>
+            <button disabled={savingDay || approved || brain.thinking} onClick={approve}>
               {approved ? "Saved for today" : "Use this plan"}
             </button>
             {approved && (

@@ -12,6 +12,8 @@ import { mealSlots } from "@/lib/nutrition";
 import { WorkspaceBackupControl } from "./workspace-backup";
 import { exportLocalWorkspace } from "@/lib/workspace-backup";
 import GoogleCalendarPanel from "./google-calendar-panel";
+import { useAccountWorkspace } from "./account-workspace-context";
+import AccountSyncPanel from "./account-sync-panel";
 const lines = (text: string) => [
   ...new Set(
     text
@@ -21,6 +23,7 @@ const lines = (text: string) => [
   ),
 ];
 export default function PersonalPreferences() {
+  const { account, owner } = useAccountWorkspace();
   const workspace = usePersonalWorkspace();
   const [draft, setDraft] = useState<PersonalWorkspace | null>(null),
     [knownProfile, setKnownProfile] = useState<Pick<
@@ -41,13 +44,14 @@ export default function PersonalPreferences() {
     snack: "",
   });
   useEffect(() => {
+    if (account) return;
     void fetch("/api/personal-profile-snapshot", { cache: "no-store" })
       .then(async (response) => {
         if (response.ok)
           setKnownProfile(personalProfileSchema.parse(await response.json()));
       })
       .catch(() => {});
-  }, []);
+  }, [account]);
   useEffect(() => {
     if (workspace.state && !draft) {
       setDraft(structuredClone(workspace.state));
@@ -130,10 +134,10 @@ export default function PersonalPreferences() {
       "Confirmed preferences from our chat are filled for review. Existing allergy answers are preserved; previously unknown answers can use your latest confirmation. Save after reviewing.",
     );
   }
-  function save() {
+  async function save() {
     if (!draft) return;
     try {
-      workspace.save({
+      await workspace.save({
         ...workspace.state!,
         displayName: draft.displayName,
         news: draft.news,
@@ -164,7 +168,9 @@ export default function PersonalPreferences() {
         },
       });
       setMessage(
-        "Saved in this browser. These preferences will be used in your planning conversations.",
+        account
+          ? "Saved on this device. The account sync status above shows when the upload is confirmed."
+          : "Saved in this browser. These preferences will be used in your planning conversations.",
       );
     } catch {
       setMessage("");
@@ -199,8 +205,10 @@ export default function PersonalPreferences() {
           <em>your Daylight.</em>
         </h1>
         <p>
-          Review and correct what Daylight knows. Settings here are saved only
-          in this browser; account sync is still to come.
+          Review and correct what Daylight knows.{" "}
+          {account
+            ? "These records belong to your account; local drafts are kept while syncing."
+            : "Settings here are saved in this browser. Sign in to use a separate account workspace."}
         </p>
       </section>
       <section className={styles.panel}>
@@ -380,34 +388,37 @@ export default function PersonalPreferences() {
           disabled={!!workspace.error}
         />
       )}
-      <section className={styles.panel} style={{ marginTop: 24 }}>
-        <h2>Keep a copy of your Daylight</h2>
-        <p>
-          Export and restore your local tasks, SAT records, meals, training,
-          calendars, preferences and saved daily plans. Your account sign-in and
-          connection credentials are excluded.
-        </p>
-        <WorkspaceBackupControl
-          disabled={false}
-          onExport={() => {
-            try {
-              const data = exportLocalWorkspace(localStorage),
-                url = URL.createObjectURL(
-                  new Blob([JSON.stringify(data, null, 2)], {
-                    type: "application/json",
-                  }),
-                ),
-                link = document.createElement("a");
-              link.href = url;
-              link.download = "daylight-workspace.json";
-              link.click();
-              setTimeout(() => URL.revokeObjectURL(url), 1000);
-            } catch (e) {
-              setMessage((e as Error).message);
-            }
-          }}
-        />
-      </section>
+      <AccountSyncPanel />
+      {!account && (
+        <section className={styles.panel} style={{ marginTop: 24 }}>
+          <h2>Keep a copy of your Daylight</h2>
+          <p>
+            Export and restore your local tasks, SAT records, meals, training,
+            calendars, preferences and saved daily plans. Your account sign-in
+            and connection credentials are excluded.
+          </p>
+          <WorkspaceBackupControl
+            disabled={false}
+            onExport={() => {
+              try {
+                const data = exportLocalWorkspace(localStorage),
+                  url = URL.createObjectURL(
+                    new Blob([JSON.stringify(data, null, 2)], {
+                      type: "application/json",
+                    }),
+                  ),
+                  link = document.createElement("a");
+                link.href = url;
+                link.download = "daylight-workspace.json";
+                link.click();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+              } catch (e) {
+                setMessage((e as Error).message);
+              }
+            }}
+          />
+        </section>
+      )}
     </main>
   );
 }

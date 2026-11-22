@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePersonalWorkspace } from "./use-personal-workspace";
 import MealIdeaBrowser from "./meal-idea-browser";
+import { useAccountWorkspace } from "./account-workspace-context";
 import {
   mealIdeas,
   combinedMealChoices,
@@ -32,6 +33,7 @@ type Slot = (typeof mealSlots)[number];
 const label = (slot: Slot) => slot[0].toUpperCase() + slot.slice(1);
 const number = (value: string) => (value.trim() ? Number(value) : null);
 export default function MealWorkspace() {
+  const { account } = useAccountWorkspace();
   const workspace = usePersonalWorkspace(),
     [day, setDay] = useState(""),
     [week, setWeek] = useState(""),
@@ -135,11 +137,11 @@ export default function MealWorkspace() {
           maxPrep,
         )
       : [];
-  function save(next: NutritionState, success: string) {
+  async function save(next: NutritionState, success: string) {
     if (!state) return false;
     try {
       if (workspace.error) throw new Error(workspace.error);
-      workspace.save({ ...state, nutrition: next });
+      await workspace.save({ ...state, nutrition: next });
       setMessage(success);
       setError("");
       return true;
@@ -150,7 +152,7 @@ export default function MealWorkspace() {
       return false;
     }
   }
-  function addFood() {
+  async function addFood() {
     if (!nutrition) return;
     const raw = {
       id: editing ?? crypto.randomUUID(),
@@ -171,7 +173,7 @@ export default function MealWorkspace() {
       return;
     }
     if (
-      save(
+      await save(
         {
           ...nutrition,
           journal: [
@@ -212,7 +214,7 @@ export default function MealWorkspace() {
         ". Your previous entry stays saved until you submit.",
     );
   }
-  function addRecipe() {
+  async function addRecipe() {
     if (!nutrition) return;
     const parsed = recipeSchema.safeParse({
       id: recipeEditing ?? crypto.randomUUID(),
@@ -245,7 +247,7 @@ export default function MealWorkspace() {
       return;
     }
     if (
-      save(
+      await save(
         {
           ...nutrition,
           recipes: [
@@ -421,7 +423,10 @@ export default function MealWorkspace() {
         </h1>
         <p>
           Meal ideas, family favorites, weekly menus, and your food
-          journal—together. Saved in this browser.
+          journal—together.{" "}
+          {account
+            ? "Your account workspace, with drafts kept on this device."
+            : "Saved in this browser."}
         </p>
       </section>
       <nav className={styles.moduleNav} aria-label="Nutrition sections">

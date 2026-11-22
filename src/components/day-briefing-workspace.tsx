@@ -1,14 +1,20 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { PersonalWorkspaceStore } from "@/lib/personal-workspace";
-import { SatStore, satSummary } from "@/lib/sat";
+import {
+  PersonalWorkspaceStore,
+  personalWorkspaceSchema,
+  defaultPersonalWorkspace,
+} from "@/lib/personal-workspace";
+import { SatStore, satSummary, satStateSchema, defaultSat } from "@/lib/sat";
+import { useAccountWorkspace } from "./account-workspace-context";
 import { practiceSummary } from "@/lib/sat-practice";
 import { dateKey } from "@/lib/scheduling";
 import { dayBriefing } from "@/lib/day-briefing";
 import styles from "./notion-daily-planner.module.css";
 import css from "./sat-practice-workspace.module.css";
 export default function DayBriefingWorkspace() {
+  const { account } = useAccountWorkspace();
   const [brief, setBrief] = useState<ReturnType<typeof dayBriefing> | null>(
       null,
     ),
@@ -18,9 +24,16 @@ export default function DayBriefingWorkspace() {
     [updated, setUpdated] = useState("");
   function refresh() {
     try {
-      const personal = new PersonalWorkspaceStore(localStorage).load().state,
+      const payload = account?.document("personal").payload;
+      const personal = account
+          ? payload === null
+            ? defaultPersonalWorkspace()
+            : personalWorkspaceSchema.parse(payload)
+          : new PersonalWorkspaceStore(localStorage).load().state,
         now = new Date(),
-        raw = localStorage.getItem("daylight.notion-day.v1." + dateKey(now));
+        raw = account
+          ? JSON.stringify(account.document("day:" + dateKey(now)).payload)
+          : localStorage.getItem("daylight.notion-day.v1." + dateKey(now));
       let data: unknown = null;
       try {
         data = raw ? JSON.parse(raw) : null;
@@ -33,7 +46,12 @@ export default function DayBriefingWorkspace() {
       );
       setError("");
       try {
-        const state = new SatStore(localStorage, "local-demo").load().state;
+        const satPayload = account?.document("sat").payload;
+        const state = account
+          ? satPayload === null
+            ? defaultSat()
+            : satStateSchema.parse(satPayload)
+          : new SatStore(localStorage, "local-demo").load().state;
         setSat(satSummary(state));
         setPractice(practiceSummary(state.attempts));
       } catch {
@@ -50,15 +68,17 @@ export default function DayBriefingWorkspace() {
   }
   useEffect(() => {
     refresh();
+    const unsubscribe = account?.subscribe(refresh);
     const timer = setInterval(refresh, 60000);
     window.addEventListener("storage", refresh);
     window.addEventListener("focus", refresh);
     return () => {
       clearInterval(timer);
+      unsubscribe?.();
       window.removeEventListener("storage", refresh);
       window.removeEventListener("focus", refresh);
     };
-  }, []);
+  }, [account]);
   const clock = (value: string) =>
     new Date(value).toLocaleTimeString([], {
       hour: "numeric",
@@ -83,9 +103,9 @@ export default function DayBriefingWorkspace() {
           <em>A day you can use.</em>
         </h1>
         <p>
-          Local preview · refreshed {updated || "when opened"}. This view reads
-          your saved records when opened; it does not prepare a briefing while
-          the app is closed.
+          {account ? "Account workspace" : "Local preview"} · refreshed{" "}
+          {updated || "when opened"}. This view reads your saved records when
+          opened; it does not prepare a briefing while the app is closed.
         </p>
       </section>
       {error && (

@@ -1,7 +1,8 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import Link from "next/link";
+import { fitnessActivitiesForDate } from "@/lib/fitness";
 import DayDetailsReview from "./day-details-review";
 import CalendarTransferPanel from "./calendar-transfer-panel";
 import { usePersonalWorkspace } from "./use-personal-workspace";
@@ -39,6 +40,7 @@ const savedSchema = z.object({
   plan: notionDayPlanSchema.nullable(),
   approved: z.boolean(),
   calendarRevision: z.string().optional(),
+  activityRevision: z.string().optional(),
 });
 type Message = z.infer<typeof messageSchema>;
 function today() {
@@ -93,7 +95,8 @@ export default function NotionDailyPlanner() {
   const end = useRef<HTMLDivElement>(null),
     requestActive = useRef(false),
     savedVersion = useRef<string | null>(null),
-    planCalendar = useRef(JSON.stringify(emptyCalendars()));
+    planCalendar = useRef(JSON.stringify(emptyCalendars())),
+    planActivities = useRef("[]");
   useEffect(() => {
     setDay(today());
     try {
@@ -109,6 +112,7 @@ export default function NotionDailyPlanner() {
         setApproved(saved.approved);
         planCalendar.current =
           saved.calendarRevision ?? JSON.stringify(emptyCalendars());
+        planActivities.current = saved.activityRevision ?? "[]";
       }
     } catch {
       setError(
@@ -150,6 +154,7 @@ export default function NotionDailyPlanner() {
       messages: nextMessages.slice(-12),
       plan: nextPlan,
       approved: nextApproved,
+      activityRevision,
       calendarRevision: JSON.stringify(
         personal.state?.calendars ?? emptyCalendars(),
       ),
@@ -229,18 +234,39 @@ export default function NotionDailyPlanner() {
   const calendarRevision = JSON.stringify(
     personal.state?.calendars ?? emptyCalendars(),
   );
+  const selectedActivities = useMemo(
+    () =>
+      personal.state
+        ? fitnessActivitiesForDate(personal.state.fitness, day || today())
+        : [],
+    [personal.state?.fitness, day],
+  );
+  const activityRevision = JSON.stringify(selectedActivities);
   useEffect(() => {
-    if (personal.state && plan && planCalendar.current !== calendarRevision) {
+    if (
+      personal.state &&
+      plan &&
+      (planCalendar.current !== calendarRevision ||
+        planActivities.current !== activityRevision)
+    ) {
       setPlan(null);
       setApproved(false);
       setError(
-        "Your calendars changed. Your conversation is kept; ask for a fresh day plan before saving or exporting.",
+        planCalendar.current !== calendarRevision
+          ? "Your calendars changed. Your conversation is kept; ask for a fresh day plan before saving or exporting."
+          : "Your selected training activities changed. Your conversation is kept; create a fresh day plan before saving or exporting.",
       );
     }
-  }, [calendarRevision, personal.state, plan]);
-  function downloadCalendar() {
-    if (!plan || !approved || planCalendar.current !== calendarRevision) return;
-    const content = exportDayCalendar(plan),
+  }, [calendarRevision, activityRevision, personal.state, plan]);
+  function downloadCalendar(includeTraining = false) {
+    if (
+      !plan ||
+      !approved ||
+      planCalendar.current !== calendarRevision ||
+      planActivities.current !== activityRevision
+    )
+      return;
+    const content = exportDayCalendar(plan, includeTraining),
       url = URL.createObjectURL(
         new Blob([content], { type: "text/calendar;charset=utf-8" }),
       );
@@ -293,6 +319,7 @@ export default function NotionDailyPlanner() {
               weeklyNotes: source.weeklyNotes.slice(0, 8),
             },
             knownDay: known,
+            selectedTrainingActivities: selectedActivities,
             plannedMealsToday:
               personal.state.nutrition.plans
                 .flatMap((plan) => plan.days)
@@ -321,6 +348,7 @@ export default function NotionDailyPlanner() {
             nextKnown,
             new Date(),
             personal.state.calendars,
+            personal.state.fitness,
           );
         } catch (e) {
           planningError =
@@ -336,6 +364,7 @@ export default function NotionDailyPlanner() {
       setMessages(complete);
       setKnown(nextKnown);
       planCalendar.current = calendarRevision;
+      planActivities.current = activityRevision;
       setPlan(nextPlan);
       setApproved(false);
       setDraft("");
@@ -359,8 +388,13 @@ export default function NotionDailyPlanner() {
   function approve() {
     if (!source || !plan) return;
     try {
-      if (planCalendar.current !== calendarRevision)
-        throw new Error("Your calendars changed. Make a fresh draft first.");
+      if (
+        planCalendar.current !== calendarRevision ||
+        planActivities.current !== activityRevision
+      )
+        throw new Error(
+          "Your calendars or selected training changed. Make a fresh draft first.",
+        );
       persist(source, sample, known, messages, plan, true);
       setApproved(true);
       setError("");
@@ -379,9 +413,11 @@ export default function NotionDailyPlanner() {
         nextKnown,
         new Date(),
         personal.state.calendars,
+        personal.state.fitness,
       );
       setKnown(nextKnown);
       planCalendar.current = calendarRevision;
+      planActivities.current = activityRevision;
       setPlan(nextPlan);
       setApproved(false);
       setError("");
@@ -411,6 +447,7 @@ export default function NotionDailyPlanner() {
           daylight<span> / daily planner preview</span>
         </Link>
         <nav className={styles.nav}>
+          <Link href="/day/fitness">Training & progress</Link>
           <Link href="/day/meals">Meals & food journal</Link>
           <Link href="/day/preferences">Your preferences</Link>
           <Link href="/">Full workspace ↗</Link>
@@ -742,11 +779,13 @@ export default function NotionDailyPlanner() {
                     <small>
                       {entry.kind === "study"
                         ? "Focus"
-                        : entry.kind === "fixed"
-                          ? "Your event"
-                          : entry.kind === "break"
-                            ? "Break"
-                            : "Breathing room"}
+                        : entry.kind === "activity"
+                          ? "Training · your chosen activity"
+                          : entry.kind === "fixed"
+                            ? "Your event"
+                            : entry.kind === "break"
+                              ? "Break"
+                              : "Breathing room"}
                     </small>
                     <h3>{entry.title}</h3>
                   </div>
@@ -773,10 +812,22 @@ export default function NotionDailyPlanner() {
               {approved ? "Saved for today" : "Use this plan"}
             </button>
             {approved && (
-              <button className={styles.secondary} onClick={downloadCalendar}>
+              <button
+                className={styles.secondary}
+                onClick={() => downloadCalendar(false)}
+              >
                 Export focus blocks to Calendar
               </button>
             )}
+            {approved &&
+              plan.entries.some((entry) => entry.kind === "activity") && (
+                <button
+                  className={styles.secondary}
+                  onClick={() => downloadCalendar(true)}
+                >
+                  Export focus + chosen training
+                </button>
+              )}
             {approved && (
               <p className={styles.muted}>
                 Download .ics for manual import into Apple or Google Calendar.

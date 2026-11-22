@@ -15,6 +15,11 @@ import {
 import type { RunningListSource } from "./notion-daily-source";
 import type { Task } from "./types";
 import {
+  fitnessActivitiesForDate,
+  emptyFitness,
+  type FitnessState,
+} from "./fitness";
+import {
   calendarBusyToday,
   emptyCalendars,
   type CalendarSnapshot,
@@ -32,8 +37,9 @@ export const notionDayPlanSchema = z.object({
       title: z.string(),
       start: z.iso.datetime(),
       end: z.iso.datetime(),
-      kind: z.enum(["study", "fixed", "recovery", "break"]),
+      kind: z.enum(["study", "activity", "fixed", "recovery", "break"]),
       sourceKey: z.string().nullable(),
+      activityId: z.string().nullable().optional(),
     }),
   ),
   deferred: z.array(z.object({ title: z.string(), reason: z.string() })),
@@ -54,6 +60,7 @@ export function buildNotionDayPlan(
   raw: NotionDayContext,
   now = new Date(),
   calendars: CalendarSnapshot = emptyCalendars(),
+  fitness: FitnessState = emptyFitness(),
 ): NotionDayPlan {
   const context = notionDayContextSchema.parse(raw);
   if (!dayIsReady(context))
@@ -93,8 +100,17 @@ export function buildNotionDayPlan(
         (item.yellowHighlighted || order.has(item.key)),
     )
     .sort((a, b) => (order.get(a.key) ?? 999) - (order.get(b.key) ?? 999));
+  const activities = fitnessActivitiesForDate(fitness, date),
+    trainingMinutes = activities.reduce(
+      (sum, activity) => sum + activity.minutes,
+      0,
+    );
   const focus = context.focusMinutes ?? 25,
-    capacity = Math.min(context.focusBudget ?? 180, Math.floor(windowMinutes)),
+    capacity = Math.min(
+      (context.focusBudget ?? 180) + trainingMinutes,
+      Math.floor(windowMinutes),
+      720,
+    ),
     reserve = Math.min(10, Math.max(0, capacity - 15));
   const preferences = preferencesSchema.parse({
     ...defaults().preferences,
@@ -156,10 +172,38 @@ export function buildNotionDayPlan(
     created_at: now.toISOString(),
     updated_at: now.toISOString(),
   }));
+  const activityNames = new Set(
+    activities.flatMap((activity) => [
+      activity.title.toLowerCase(),
+      "training: " + activity.title.toLowerCase(),
+    ]),
+  );
+  for (const activity of activities)
+    tasks.push({
+      id: "fitness:" + activity.id,
+      title: "Training: " + activity.title,
+      subject: "Training",
+      description:
+        "Flexible workout explicitly selected by the user. A scheduled block does not mean the session was completed.",
+      deadline: null,
+      estimated_minutes: activity.minutes,
+      remaining_minutes: activity.minutes,
+      priority: "medium",
+      energy_level: "medium",
+      status: "not_started",
+      user_id: "notion-day-proposal",
+      actual_minutes: 0,
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+    });
   const assumptions = [
     `${focus}-minute focus blocks are suggested time to spend today, not estimates that whole assignments will be finished.`,
     `${context.focusBudget ?? 180} minutes is ${context.focusBudget === null ? "the suggested" : "your requested"} focus allowance, with breaks and ${reserve} minutes kept free.`,
   ];
+  if (activities.length)
+    assumptions.push(
+      `${trainingMinutes} minutes of explicitly selected training are considered in addition to the focus allowance, within the available window. Whole training blocks are reserved before other flexible work when priorities are equal. Nothing prescribes extra exercise or confirms completion. Fixed team practices belong in your calendar.`,
+    );
   if (calendars.calendars.length)
     assumptions.push(
       "Imported calendar events are protected snapshots, not live synchronization. Changes in Google or Apple need a fresh import.",
@@ -186,6 +230,7 @@ export function buildNotionDayPlan(
       assumptions.push(calendar.id + ": " + warning);
   const titles = new Set(tasks.map((task) => task.title.trim().toLowerCase()));
   for (const [index, extra] of context.extras.entries()) {
+    if (activityNames.has(extra.title.trim().toLowerCase())) continue;
     if (titles.has(extra.title.trim().toLowerCase())) continue;
     titles.add(extra.title.trim().toLowerCase());
     const minutes = extra.minutes ?? focus;
@@ -217,11 +262,21 @@ export function buildNotionDayPlan(
       now,
       1,
       now,
-      tasks.map((task) => task.id),
+      [
+        ...activities.map((activity) => "fitness:" + activity.id),
+        ...tasks
+          .filter((task) => !task.id.startsWith("fitness:"))
+          .map((task) => task.id),
+      ],
+      { wholeTaskIds: activities.map((activity) => "fitness:" + activity.id) },
     ),
     agenda = dailyAgenda(tasks, { ...state, sessions: result.sessions }, now);
   const entries: NotionDayPlan["entries"] = agenda.entries.map((entry) => ({
     ...entry,
+    kind: entry.taskId?.startsWith("fitness:") ? "activity" : entry.kind,
+    activityId: entry.taskId?.startsWith("fitness:")
+      ? entry.taskId.slice(8)
+      : null,
     sourceKey: entry.taskId?.startsWith("notion:")
       ? entry.taskId.slice(7)
       : null,

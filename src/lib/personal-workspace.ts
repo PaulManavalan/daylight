@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { calendarSnapshotSchema, emptyCalendars } from "./calendar-transfer";
 import { nutritionSchema, emptyNutrition, mealSlots } from "./nutrition";
+import {
+  fitnessStateSchema,
+  emptyFitness,
+  fitnessPreferencesSchema,
+} from "./fitness";
 const foodList = z.array(z.string().trim().min(1).max(80)).max(60);
 export const newsTopics = [
   "US",
@@ -45,14 +50,17 @@ export const personalWorkspaceSchema = z.object({
   news: z.array(z.enum(newsTopics)).min(1).max(9),
   calendars: calendarSnapshotSchema,
   nutrition: nutritionSchema.default(emptyNutrition),
+  fitness: fitnessStateSchema.default(emptyFitness),
   updatedAt: z.iso.datetime(),
 });
 export type PersonalWorkspace = z.infer<typeof personalWorkspaceSchema>;
-export const personalProfileSchema = personalWorkspaceSchema.pick({
-  displayName: true,
-  food: true,
-  news: true,
-});
+export const personalProfileSchema = personalWorkspaceSchema
+  .pick({
+    displayName: true,
+    food: true,
+    news: true,
+  })
+  .extend({ trainingPreferences: fitnessPreferencesSchema.optional() });
 export const personalWorkspaceKey = "daylight.personal-preview.v1";
 export const defaultPersonalWorkspace = (): PersonalWorkspace => ({
   version: 1,
@@ -69,6 +77,7 @@ export const defaultPersonalWorkspace = (): PersonalWorkspace => ({
   news: [...newsTopics.filter((topic) => topic !== "Local")],
   calendars: emptyCalendars(),
   nutrition: emptyNutrition(),
+  fitness: emptyFitness(),
   updatedAt: new Date().toISOString(),
 });
 interface Storage {

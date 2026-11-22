@@ -667,3 +667,7 @@
     margin: 8px 0;
   }
 }
+.timeline li[data-kind="activity"] {
+  background: #263a30;
+  border-left: 3px solid #91b4a1;
+}

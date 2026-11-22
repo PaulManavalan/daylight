@@ -56,7 +56,7 @@ This is an implementation record, not a claim of launch readiness. Private prefe
 - Re-import the same named calendar: it replaces its snapshot rather than duplicating it locally. Another calendar remains separate. Provider calendar records are never modified by import/removal.
 - Approve a day plan and export only Daylight focus blocks. Downloading is **not** a claim that Apple or Google accepted an event.
 - Edit preferences, reload and check persistence. Allergies remain unknown until explicitly answered. Preferences are included in the planning context.
-- Live OAuth, meal/fitness/news modules, full account sync and iPhone are not represented as completed features.
+- Meal planning and fitness logging have local checkpoints; fitness includes user-authored routines and explicitly selected training in daily plans. Personalized workout generation, live OAuth, news, full account sync and iPhone remain incomplete.
 
 ## Official integration references
 

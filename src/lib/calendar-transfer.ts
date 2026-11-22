@@ -306,8 +306,11 @@ export function calendarBusyToday(
   return result;
 }
 
-/** Export ONLY approved Daylight focus sessions. No attendees, invitations, alarms or external events. */
-export function exportDayCalendar(plan: NotionDayPlan) {
+/** Export Daylight focus sessions, optionally chosen training. No external events or invitations. */
+export function exportDayCalendar(
+  plan: NotionDayPlan,
+  includeTraining = false,
+) {
   const calendar = new ICAL.Component(["vcalendar", [], []]);
   calendar.updatePropertyWithValue("version", "2.0");
   calendar.updatePropertyWithValue(
@@ -315,7 +318,9 @@ export function exportDayCalendar(plan: NotionDayPlan) {
     "-//Daylight//Personal Planner//EN",
   );
   calendar.updatePropertyWithValue("calscale", "GREGORIAN");
-  for (const entry of plan.entries.filter((e) => e.kind === "study")) {
+  for (const entry of plan.entries.filter(
+    (e) => e.kind === "study" || (includeTraining && e.kind === "activity"),
+  )) {
     const event = new ICAL.Event();
     event.uid = `daylight-${encodeURIComponent(plan.day + "-" + entry.sourceKey + "-" + entry.start + "-" + entry.title)}@daylight.local`;
     event.summary = entry.title;
@@ -327,7 +332,9 @@ export function exportDayCalendar(plan: NotionDayPlan) {
     );
     event.component.updatePropertyWithValue(
       "description",
-      "Daylight focus block. This is not confirmation that the underlying task is complete.",
+      entry.kind === "activity"
+        ? "Daylight training plan selected by the user. This is not a completed-session report."
+        : "Daylight focus block. This is not confirmation that the underlying task is complete.",
     );
     calendar.addSubcomponent(event.component);
   }

@@ -82,7 +82,7 @@ export interface PlanResult {
   changes: PlanChange[];
   warnings: string[];
 }
-export interface PlanOptions { focusTaskId?: string; interruptTaskId?: string; skipTaskId?: string }
+export interface PlanOptions { focusTaskId?: string; interruptTaskId?: string; skipTaskId?: string; wholeTaskIds?:string[] }
 
 /** Pace adds softness without reducing any explicit user-set break or reserve. */
 export function planningLimits(preferences: PlanningPreferences) {
@@ -260,7 +260,8 @@ export function plan(tasks: Task[], state: PlanningState, from: Date, days: numb
     for (const task of queue) {
       const remaining = left.get(task.id)!;
       const restart = task.status === "stuck" && !restarted.has(task.id);
-      const maximum = Math.min(remaining,restart ? 15 : p.session);
+      const whole=options.wholeTaskIds?.includes(task.id)??false;
+      const maximum = whole?remaining:Math.min(remaining,restart ? 15 : p.session);
       const due = task.deadline ? +new Date(task.deadline) : Infinity;
       const choices: {session:Session; score:number; duration:number}[] = [];
       for (let index=0; index<available.length; index++) {
@@ -270,6 +271,7 @@ export function plan(tasks: Task[], state: PlanningState, from: Date, days: numb
         for (const f of day.free) {
           for (let at=Math.ceil(f.start/(5*minute))*5*minute; at<Math.min(f.end,cutoff); at+=5*minute) {
             const duration = Math.min(maximum,day.capacity,Math.floor((Math.min(f.end,cutoff)-at)/minute));
+            if(whole&&duration<remaining)continue;
             if (duration < Math.min(15,remaining)) continue;
             const finish=at+duration*minute;
             const candidate:Session={id:"candidate",taskId:task.id,start:new Date(at).toISOString(),end:new Date(finish).toISOString(),kind:restart?"restart":"study",reason:""};

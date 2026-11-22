@@ -1,4 +1,5 @@
 "use client";
+import {savedDaySessionSchema} from "@/lib/day-session";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import Link from "next/link";
@@ -32,16 +33,7 @@ const messageSchema = z.object({
   role: z.enum(["user", "assistant"]),
   content: z.string().max(5000),
 });
-const savedSchema = z.object({
-  source: sourceSchema,
-  sample: z.boolean(),
-  known: notionDayContextSchema,
-  messages: z.array(messageSchema).max(12),
-  plan: notionDayPlanSchema.nullable(),
-  approved: z.boolean(),
-  calendarRevision: z.string().optional(),
-  activityRevision: z.string().optional(),
-});
+const savedSchema = savedDaySessionSchema;
 type Message = z.infer<typeof messageSchema>;
 function today() {
   const now = new Date();
@@ -447,6 +439,8 @@ export default function NotionDailyPlanner() {
           daylight<span> / daily planner preview</span>
         </Link>
         <nav className={styles.nav}>
+          <Link href="/day/briefing">Today overview</Link>
+          <Link href="/day/sat">SAT practice</Link>
           <Link href="/day/fitness">Training & progress</Link>
           <Link href="/day/meals">Meals & food journal</Link>
           <Link href="/day/preferences">Your preferences</Link>

@@ -1,0 +1,90 @@
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.sidebar {
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+}
+.field {
+  display: grid;
+  gap: 10px;
+  margin: 20px 0;
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0;
+}
+.check input,
+.option input {
+  width: 20px;
+  min-width: 20px;
+  accent-color: #b6ca9a;
+}
+.question {
+  border: 0;
+  padding: 0;
+  margin: 22px 0;
+  min-width: 0;
+}
+.question legend {
+  font-size: 20px;
+  line-height: 1.6;
+  margin-bottom: 24px;
+}
+.option {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid #45563f;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 12px 0;
+  line-height: 1.6;
+  cursor: pointer;
+}
+.option:has(input:checked) {
+  background: #2b402c;
+  border-color: #b6ca9a;
+}
+.feedback {
+  border-top: 1px solid #45563f;
+  padding-top: 16px;
+}
+.feedback button {
+  margin: 8px 10px 8px 0;
+}
+.record {
+  border-top: 1px solid #45563f;
+  padding: 18px 0;
+  overflow-wrap: anywhere;
+}
+.record summary {
+  cursor: pointer;
+  line-height: 1.6;
+}
+.history {
+  grid-column: 1/-1;
+}
+.layout button {
+  min-height: 44px;
+}
+.layout select {
+  max-width: 100%;
+}
+@media (max-width: 760px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .question legend {
+    font-size: 18px;
+  }
+  .option {
+    padding: 12px;
+  }
+}

@@ -37,6 +37,7 @@ import { stableJSON } from "@/lib/workspace-documents";
 import { refreshDaySource, daySourceContext } from "@/lib/day-source-refresh";
 import DayHomeworkCheckin from "./day-homework-checkin";
 import HomeworkProposalCard from "./homework-proposal-card";
+import DayNowPanel from "./day-now-panel";
 import { chatDecision, wantsOpenChat } from "@/lib/chat-actions";
 import { isHomeworkWorkReport } from "@/lib/day-homework-model";
 import {
@@ -1270,6 +1271,14 @@ export default function NotionDailyPlanner() {
           </p>
         ) : (
           <>
+            <DayNowPanel
+              plan={plan}
+              approved={
+                approved &&
+                planCalendar.current === calendarRevision &&
+                planActivities.current === activityRevision
+              }
+            />
             <p>
               Available window: {plan.window}.{" "}
               {sample ? "This plan uses sample homework. " : ""}Nothing is

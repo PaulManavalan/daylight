@@ -10,10 +10,7 @@ export const homeworkActionSchema = z
   .strict();
 export function homeworkActionRequest(request: BrainRequest) {
   const context = JSON.parse(request.context);
-  const text =
-    request.messages.filter((message) => message.role === "user").at(-1)
-      ?.content ?? "";
-  return isHomeworkWorkReport(text, !!context.pendingHomeworkCheckin);
+  return homeworkReportText(request.messages, context) !== null;
 }
 export function homeworkActionMessages(request: BrainRequest) {
   const context = JSON.parse(request.context);
@@ -43,6 +40,57 @@ interface Message {
   role: "user" | "assistant";
   content: string;
 }
+/** Keep an explicit report attached to an immediate, source-backed clarification. */
+export function homeworkReportText(
+  messages: Message[],
+  context: {
+    source?: { items?: { title?: unknown; subject?: unknown }[] };
+    pendingHomeworkCheckin?: unknown;
+  },
+): string | null {
+  const latest = messages.at(-1);
+  if (!latest || latest.role !== "user") return null;
+  if (isHomeworkWorkReport(latest.content, !!context.pendingHomeworkCheckin))
+    return latest.content;
+  const [original, question] = messages.slice(-3, -1);
+  if (
+    !original ||
+    original.role !== "user" ||
+    question?.role !== "assistant" ||
+    !isHomeworkWorkReport(original.content) ||
+    latest.content.length > 200 ||
+    /\?/.test(latest.content) ||
+    preservesDayFacts(latest.content)
+  )
+    return null;
+  const answer = latest.content
+    .trim()
+    .toLowerCase()
+    .replace(/[.!]+$/, "")
+    .replace(/^the\s+/, "")
+    .replace(/\s+one$/, "");
+  const namesAnItem = context.source?.items?.some((item) =>
+    [item.title, item.subject].some(
+      (value) =>
+        typeof value === "string" && value.trim().toLowerCase() === answer,
+    ),
+  );
+  const identityQuestion =
+    /\b(?:which (?:subject|assignment|homework|one)|do you mean)\b/i.test(
+      question.content,
+    ) && /\?/.test(question.content);
+  const durationQuestion =
+    /\b(?:how long|how many (?:actual )?minutes)\b/i.test(question.content) &&
+    /\?/.test(question.content);
+  const durationAnswer =
+    /^\d{1,3}(?:\.\d{1,2})?\s*(?:minutes?|mins?|m|hours?|hrs?|h)$/.test(
+      durationText(answer),
+    );
+  return (identityQuestion && namesAnItem) ||
+    (durationQuestion && durationAnswer)
+    ? original.content + " " + latest.content
+    : null;
+}
 export function isHomeworkWorkReport(text: string, pending = false) {
   if (
     preservesDayFacts(text) ||
@@ -51,7 +99,7 @@ export function isHomeworkWorkReport(text: string, pending = false) {
     return false;
   return (
     /\b(?:i(?:['’]ve| have)? (?:finished|completed|spent|worked|studied|did)|i(?:['’]m| am) (?:done|finished)|mark .{1,200}(?:complete|done)|(?:skip|set aside|defer) .{1,200}|(?:need|want) (?:(?:another |more )\d+\s*|\d+\s*(?:more|another)\s+)(?:minutes?|mins?|hours?|hrs?))\b/i.test(
-      text,
+      durationText(text),
     ) ||
     /^\s*(?:spent|worked|finished|completed|done with)\b/i.test(text) ||
     (pending &&
@@ -60,8 +108,7 @@ export function isHomeworkWorkReport(text: string, pending = false) {
       ))
   );
 }
-function durations(text: string) {
-  const values = new Set<number>();
+function durationText(text: string) {
   const words: Record<string, number> = {
     one: 1,
     two: 2,
@@ -95,7 +142,17 @@ function durations(text: string) {
       /\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|sixty)\b/g,
       (word) => String(words[word]),
     );
-  for (const match of normalized.matchAll(
+  return normalized.replace(
+    /(?<!\w)(\d{1,2})\s*(?:hours?|hrs?|h)\s*(?:and\s*)?(\d{1,2})\s*(?:minutes?|mins?|m)\b/g,
+    (match, hours, minutes) =>
+      Number(minutes) < 60
+        ? `${Number(hours) * 60 + Number(minutes)} minutes`
+        : match,
+  );
+}
+function durations(text: string) {
+  const values = new Set<number>();
+  for (const match of durationText(text).matchAll(
     /(?<!\w)(\d{1,3}(?:\.\d{1,2})?)\s*(minutes?|mins?|m|hours?|hrs?|h)\b/g,
   )) {
     const minutes = Number(match[1]) * (/^h/.test(match[2]) ? 60 : 1);
@@ -108,7 +165,9 @@ export function groundHomeworkCheckin(
   raw: unknown,
   messages: Message[],
   context: {
-    source?: { items?: { key?: unknown; title?: unknown }[] };
+    source?: {
+      items?: { key?: unknown; title?: unknown; subject?: unknown }[];
+    };
     pendingHomeworkCheckin?: { value?: HomeworkCheckin };
   },
 ): HomeworkCheckin | null {
@@ -116,11 +175,43 @@ export function groundHomeworkCheckin(
       messages.filter((message) => message.role === "user").at(-1)?.content ??
       "",
     pending = context.pendingHomeworkCheckin?.value;
-  if (!isHomeworkWorkReport(latest, !!pending)) return null;
+  const reportText = homeworkReportText(messages, context);
+  if (!reportText) return null;
+  // An explicit numeric correction belongs only to the current unsaved review.
+  // Recover an abstention without guessing which field the user meant.
+  const correction = pending
+    ? latest
+        .trim()
+        .match(
+          /^(?:actually\s+|make that\s+)?(\d{1,3})\s*(?:minutes?|mins?)?\s*,?\s*not\s+(\d{1,3})[.!]*$/i,
+        )
+    : null;
+  if (correction && pending) {
+    const next = Number(correction[1]),
+      before = Number(correction[2]);
+    if (
+      before === pending.minutes &&
+      before !== pending.remainingMinutes &&
+      pending.outcome !== "more_time"
+    )
+      raw = { ...pending, minutes: next };
+    else if (
+      before === pending.remainingMinutes &&
+      before !== pending.minutes &&
+      ["worked", "more_time"].includes(pending.outcome)
+    )
+      raw = { ...pending, remainingMinutes: next };
+    else return null;
+  }
   // A literal, unique source title needs no semantic guess. Recover only this
   // explicit completion report when a small model abstains; it is still UNSAVED.
   if (raw == null) {
-    const match = latest
+    const statement =
+      reportText === latest
+        ? latest
+        : (messages.filter((message) => message.role === "user").at(-2)
+            ?.content ?? latest);
+    const match = statement
       .trim()
       .match(
         /^(?:I (?:finished|completed)|I(?:['’]m| am) done with|Finished|Completed)\s+(.+?)[.!]*$/i,
@@ -130,13 +221,26 @@ export function groundHomeworkCheckin(
         .trim()
         .toLocaleLowerCase()
         .replace(/[.!]+$/, "");
-    const matches = match
+    let matches = match
       ? (context.source?.items?.filter(
           (item) =>
             typeof item.title === "string" &&
-            normalize(item.title) === normalize(match[1]),
+            (normalize(item.title) === normalize(match[1]) ||
+              (typeof item.subject === "string" &&
+                normalize(item.subject + " " + item.title) ===
+                  normalize(match[1]))),
         ) ?? [])
       : [];
+    if (matches.length > 1 && reportText !== latest) {
+      const answer = normalize(latest)
+        .replace(/^the\s+/, "")
+        .replace(/\s+one$/, "");
+      matches = matches.filter(
+        (item) =>
+          typeof item.subject === "string" &&
+          normalize(item.subject) === answer,
+      );
+    }
     if (matches.length === 1 && typeof matches[0].key === "string")
       raw = {
         sourceKey: matches[0].key,
@@ -156,7 +260,49 @@ export function groundHomeworkCheckin(
     )
   )
     return null;
-  const combined = pending ? String(pending.note ?? "") + " " + latest : latest;
+  const target = context.source.items.find(
+    (item) => item.key === value.sourceKey,
+  )!;
+  if (typeof target.title === "string") {
+    const title = target.title.trim().toLowerCase();
+    const duplicates = context.source.items.filter(
+      (item) =>
+        typeof item.title === "string" &&
+        item.title.trim().toLowerCase() === title,
+    );
+    if (duplicates.length > 1) {
+      const words = (text: string) =>
+        " " +
+        text
+          .toLowerCase()
+          .replace(/[^\p{L}\p{N}]+/gu, " ")
+          .trim() +
+        " ";
+      const qualifiers = (text: string) =>
+        duplicates.filter(
+          (item) =>
+            typeof item.subject === "string" &&
+            item.subject.trim() &&
+            words(text).includes(words(item.subject)),
+        );
+      let qualified = qualifiers(latest);
+      if (!qualified.length && pending?.sourceKey === value.sourceKey)
+        qualified = [target];
+      if (!qualified.length)
+        qualified = qualifiers(
+          messages
+            .filter((message) => message.role === "user")
+            .slice(-4, -1)
+            .map((message) => message.content)
+            .join(" "),
+        );
+      if (qualified.length !== 1 || qualified[0].key !== value.sourceKey)
+        return null;
+    }
+  }
+  const combined = pending
+    ? String(pending.note ?? "") + " " + reportText
+    : reportText;
   const outcomeText =
     /\b(?:finished|complete|completed|done|skip|set aside|defer)\b/i.test(
       latest,
@@ -177,11 +323,13 @@ export function groundHomeworkCheckin(
   )
     return null;
   const mentioned = durations(combined),
-    actual = /\b(?:spent|worked|studied|did)\b/i.test(combined);
+    actual =
+      /\b(?:spent|worked|studied|did)\b/i.test(combined) ||
+      !!(pending && pending.minutes !== null);
   const actualText = /\b(?:spent|worked|studied|did)\b/i.test(latest)
     ? latest
     : combined;
-  const actualMatch = actualText.match(
+  const actualMatch = durationText(actualText).match(
     /\b(?:spent|worked|studied|did)\s+(?:for\s+)?(\d{1,3}(?:\.\d{1,2})?)\s*(minutes?|mins?|m|hours?|hrs?|h)\b/i,
   );
   if (actualMatch) {
@@ -206,7 +354,7 @@ export function groundHomeworkCheckin(
   )
     ? latest
     : combined;
-  const remainingMatch = remainingText.match(
+  const remainingMatch = durationText(remainingText).match(
     /\b(?:need|want|another)\s+(?:another\s+)?(\d{1,3}(?:\.\d{1,2})?)\s*(?:more\s+)?(minutes?|mins?|m|hours?|hrs?|h)\b/i,
   );
   if (["worked", "more_time"].includes(value.outcome) && remainingMatch) {
@@ -215,7 +363,12 @@ export function groundHomeworkCheckin(
     if (Number.isInteger(minutes) && minutes > 0 && minutes <= 240)
       value.remainingMinutes = minutes;
   }
-  if (!actual && value.outcome === "worked" && value.remainingMinutes !== null)
+  if (
+    !actual &&
+    !pending &&
+    value.outcome === "worked" &&
+    value.remainingMinutes !== null
+  )
     value.outcome = "more_time";
   if (value.outcome === "more_time") value.minutes = null;
   const contrast = pending

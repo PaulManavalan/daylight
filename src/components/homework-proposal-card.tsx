@@ -83,6 +83,7 @@ export default function HomeworkProposalCard({
     >
       <small>UNSAVED · REVIEW BEFORE RECORDING</small>
       <h3>{item?.title ?? "Homework item no longer available"}</h3>
+      {item?.subject && <p className={styles.muted}>{item.subject}</p>}
       <p>
         {proposal.value.outcome === "complete"
           ? "Report this assignment complete in Daylight."

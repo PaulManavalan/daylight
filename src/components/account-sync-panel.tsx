@@ -98,6 +98,7 @@ export default function AccountSyncPanel() {
     <section id="account-sync" className={css.panel} aria-label="Account sync">
       <h2>Your account data</h2>
       <p role="status">{status?.message}</p>
+      {busy && <p role="status">Saving your reviewed choice…</p>}
       <p>
         {status?.dirty ?? 0} record groups waiting to sync. Your local workspace
         is separate from this account.

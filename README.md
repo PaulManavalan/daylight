@@ -37,6 +37,8 @@ Test cloud isolation before production: create users A and B; create a task as A
 
 ## Included
 
+The focused `/day/news` reader and Today overview now show linked publisher headlines using saved topic interests. The personal RSS checkpoint includes The Guardian sections and separately labelled NASA updates, original publication dates, duplicate removal and stale-source states. It does not generate AI news summaries or prepare a briefing while the app is closed. See [news reader scope and verification](docs/news-reader.md) before commercial use.
+
 - Next.js 16 App Router + TypeScript + Tailwind 4
 - shadcn/ui-style owned Button and Radix Dialog primitives, configured in `components.json`
 - Responsive task database; add, read, edit, delete, complete, and reopen

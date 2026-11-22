@@ -13,6 +13,7 @@ import { dateKey } from "@/lib/scheduling";
 import { dayBriefing } from "@/lib/day-briefing";
 import styles from "./notion-daily-planner.module.css";
 import css from "./sat-practice-workspace.module.css";
+import NewsBriefingPanel from "./news-briefing-panel";
 export default function DayBriefingWorkspace() {
   const { account } = useAccountWorkspace();
   const [brief, setBrief] = useState<ReturnType<typeof dayBriefing> | null>(
@@ -92,6 +93,7 @@ export default function DayBriefingWorkspace() {
         </Link>
         <nav className={styles.nav}>
           <Link href="/day">Plan & chat</Link>
+          <Link href="/day/news">News</Link>
           <Link href="/day/preferences">Preferences & calendars</Link>
         </nav>
       </header>
@@ -182,6 +184,7 @@ export default function DayBriefingWorkspace() {
             )}
           </section>
           <aside className={css.sidebar}>
+            <NewsBriefingPanel />
             <section className={styles.panel}>
               <h2>Homework you chose</h2>
               <p className={styles.muted}>

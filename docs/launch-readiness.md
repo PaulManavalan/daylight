@@ -23,7 +23,7 @@ Also confirmed November 19: **no paid model/API costs for now**; use existing lo
 | Fitness | Product requirements recorded | Age-appropriate cross-country, soccer, calisthenics, strength and mobility tracking; confirmed training preferences and recovery limits |
 | Nutrition | Product requirements recorded | Adequate fueling, preferences/restrictions, meals/snacks, optional logging and grocery support; individualized goals remain unconfirmed |
 | Sleep | Protected sleep windows exist | Preferences/check-ins and verified use in scheduling and training recommendations |
-| News | Product requirements recorded | Reliable linked sources, refresh timestamps, source-failure states and clear reporting versus analysis |
+| News | Personal reader and Today panel retrieve The Guardian and NASA feeds; dates, direct links, provenance, deduplication, failure states and mobile checks implemented | Additional independent publishers, local source selection, commercial reuse review, authorized AI synthesis and deployment acceptance; see `news-reader.md` |
 | Catholic readings | Default explicitly confirmed as daily Mass readings | Authorized source links/references, dates/timezones, optional reflections and reading progress |
 | Morning briefing | Today shows a plan/timeline | Unified relevant content and genuinely verified pre-wake background generation; opening the page alone is not background automation |
 | Morning/evening check-ins | Reviewed free-text notes, same-day draft recovery, bounded history/removal, backups and dated model context implemented | Broader adaptive sleep/energy/training guidance and confirmed personal preferences remain future work |

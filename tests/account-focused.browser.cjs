@@ -242,6 +242,12 @@ function ownerFrom(request) {
       await context.route("**/api/assistant", (r) =>
         r.fulfill({ json: { available: false, models: [] } }),
       );
+      await context.route("**/api/news?**", (r) =>
+        r.fulfill({
+          status: 503,
+          json: { error: "News disabled in the account-isolation scenario" },
+        }),
+      );
       const page = await context.newPage();
       page.on("pageerror", (e) => errors.push(e.message));
       await page.clock.install({ time: new Date("2026-11-21T09:00:00-05:00") });
@@ -339,6 +345,10 @@ function ownerFrom(request) {
     await one.page
       .getByRole("button", { name: "Use account version", exact: true })
       .click();
+    await one.page
+      .getByLabel("Workspace identity")
+      .getByText("Account workspace · saved", { exact: true })
+      .waitFor();
     await one.page.reload();
     assert.equal(
       await one.page.getByLabel("Your name", { exact: true }).inputValue(),

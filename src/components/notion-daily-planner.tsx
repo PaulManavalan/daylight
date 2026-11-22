@@ -591,6 +591,7 @@ export default function NotionDailyPlanner() {
         </Link>
         <nav className={styles.nav}>
           <Link href="/day/briefing">Today overview</Link>
+          <Link href="/day/news">News</Link>
           <Link href="/day/sat">SAT practice</Link>
           <Link href="/day/fitness">Training & progress</Link>
           <Link href="/day/meals">Meals & food journal</Link>

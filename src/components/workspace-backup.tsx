@@ -125,8 +125,7 @@ export function WorkspaceBackupControl({
       <details ref={menu} className="backup-options">
         <summary>
           <Upload size={16} />
-          <span className="hidden sm:inline">Backups</span>
-          <span className="sr-only sm:hidden">Backups</span>
+          <span>Backups</span>
         </summary>
         <div>
           <Button

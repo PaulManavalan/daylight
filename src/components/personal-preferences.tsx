@@ -11,6 +11,7 @@ import styles from "./notion-daily-planner.module.css";
 import { mealSlots } from "@/lib/nutrition";
 import { WorkspaceBackupControl } from "./workspace-backup";
 import { exportLocalWorkspace } from "@/lib/workspace-backup";
+import GoogleCalendarPanel from "./google-calendar-panel";
 const lines = (text: string) => [
   ...new Set(
     text
@@ -133,7 +134,9 @@ export default function PersonalPreferences() {
     if (!draft) return;
     try {
       workspace.save({
-        ...draft,
+        ...workspace.state!,
+        displayName: draft.displayName,
+        news: draft.news,
         food: {
           ...draft.food,
           likes: lines(rawFood.likes),
@@ -231,10 +234,7 @@ export default function PersonalPreferences() {
                 Review preferences from our chat
               </button>
             )}
-            <p>
-              These help with planning. No calorie restriction or weight-loss
-              targets are set.
-            </p>
+            <p>These guide your weekly menu and recipe ideas.</p>
             <label>
               Foods you enjoy (comma separated)
               <input
@@ -373,6 +373,13 @@ export default function PersonalPreferences() {
         )}
         {message && <p role="status">{message}</p>}
       </section>
+      {workspace.state && (
+        <GoogleCalendarPanel
+          state={workspace.state}
+          save={workspace.save}
+          disabled={!!workspace.error}
+        />
+      )}
       <section className={styles.panel} style={{ marginTop: 24 }}>
         <h2>Keep a copy of your Daylight</h2>
         <p>

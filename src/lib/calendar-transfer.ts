@@ -30,6 +30,7 @@ export const calendarSnapshotSchema = z.object({
         readAt: z.iso.datetime(),
         rangeStart: z.iso.datetime(),
         rangeEnd: z.iso.datetime(),
+        needsRefresh: z.boolean().optional(),
         warnings: z.array(z.string()).max(20),
         events: z.array(calendarEventSchema).max(1000),
       }),
@@ -259,6 +260,10 @@ export function calendarBusyToday(
   const localClock = (date: Date) =>
     `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
   for (const calendar of calendarSnapshotSchema.parse(snapshot).calendars) {
+    if (calendar.needsRefresh)
+      throw new Error(
+        `Refresh ${calendar.id}: its source events changed after the last read.`,
+      );
     if (
       +from < Date.parse(calendar.rangeStart) ||
       +to > Date.parse(calendar.rangeEnd)

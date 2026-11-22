@@ -13,7 +13,7 @@ export const savedDaySessionSchema = z.object({
         content: z.string().max(5000),
       }),
     )
-    .max(12),
+    .max(200),
   plan: notionDayPlanSchema.nullable(),
   approved: z.boolean(),
   calendarRevision: z.string().optional(),

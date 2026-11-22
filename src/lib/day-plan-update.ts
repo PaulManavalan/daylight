@@ -1,4 +1,4 @@
-import { wantsOpenChat } from "./chat-actions";
+import { preservesDayFacts } from "./day-conversation-intent";
 import {
   notionDayContextSchema,
   type NotionDayContext,
@@ -9,11 +9,7 @@ export function shouldUpdateDayPlan(
   after: NotionDayContext,
   message: string,
 ) {
-  if (
-    wantsOpenChat(message) ||
-    /^\s*(?:what if|why\b|how (?:does|did)\b|explain\b)/i.test(message)
-  )
-    return false;
+  if (preservesDayFacts(message)) return false;
   const changed =
     JSON.stringify(notionDayContextSchema.parse(before)) !==
     JSON.stringify(notionDayContextSchema.parse(after));

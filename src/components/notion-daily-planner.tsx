@@ -34,6 +34,7 @@ import {
   accountAuthHeaders,
 } from "./account-workspace-context";
 import { stableJSON } from "@/lib/workspace-documents";
+import { refreshDaySource, daySourceContext } from "@/lib/day-source-refresh";
 
 const sourceSchema = runningSourceSchema;
 const messageSchema = z.object({
@@ -88,8 +89,9 @@ export default function NotionDailyPlanner() {
     [plan, setPlan] = useState<NotionDayPlan | null>(null),
     [approved, setApproved] = useState(false),
     [error, setError] = useState(""),
+    [sourceNotice, setSourceNotice] = useState(""),
     [busy, setBusy] = useState(false),
-    [savingDay,setSavingDay]=useState(false),
+    [savingDay, setSavingDay] = useState(false),
     [connected, setConnected] = useState(false),
     [configured, setConfigured] = useState(false),
     [url, setUrl] = useState(""),
@@ -195,7 +197,7 @@ export default function NotionDailyPlanner() {
       source: nextSource,
       sample: nextSample,
       known: nextKnown,
-      messages: nextMessages.slice(-12),
+      messages: nextMessages.slice(-200),
       plan: nextPlan,
       approved: nextApproved,
       activityRevision,
@@ -205,7 +207,8 @@ export default function NotionDailyPlanner() {
     });
     const key = "daylight.notion-day.v1." + day;
     if (account) {
-      if(writingDay.current!==null)throw Error('Wait for the current day draft to finish saving.');
+      if (writingDay.current !== null)
+        throw Error("Wait for the current day draft to finish saving.");
       setSavingDay(true);
       writingDay.current = stableJSON(value);
       try {
@@ -239,6 +242,7 @@ export default function NotionDailyPlanner() {
     setPlan(null);
     setApproved(false);
     setError("");
+    setSourceNotice("");
     try {
       await persist(next, isSample, emptyNotionDay(), [], null, false);
     } catch {
@@ -276,21 +280,72 @@ export default function NotionDailyPlanner() {
       setBusy(false);
     }
   }
-  async function readList() {
-    if (
-      messages.length &&
-      !confirm(
-        "Reading a new list starts a new conversation and draft in this preview. Continue?",
-      )
-    )
-      return;
+  async function readList(localSnapshot?: RunningListSource) {
+    if (busy || savingDay || requestActive.current) return;
     setBusy(true);
     setError("");
+    setSourceNotice("");
     try {
       const next = sourceSchema.parse(
-        await notion({ op: "running-list", source: url }),
+        localSnapshot ?? (await notion({ op: "running-list", source: url })),
       );
-      await useSource(next, false);
+      if (!source) await useSource(next, false);
+      else {
+        const refreshed = refreshDaySource(source, next, known, plan, approved);
+        const stale =
+          planCalendar.current !== calendarRevision ||
+          planActivities.current !== activityRevision;
+        let nextPlan = stale ? null : refreshed.plan;
+        const nextApproved = stale ? false : refreshed.approved;
+        let reason = "";
+        if (
+          (refreshed.changed || stale) &&
+          dayIsReady(refreshed.known) &&
+          personal.state &&
+          !personal.error
+        ) {
+          try {
+            nextPlan = buildNotionDayPlan(
+              next,
+              refreshed.known,
+              new Date(),
+              personal.state.calendars,
+              personal.state.fitness,
+            );
+          } catch (e) {
+            reason =
+              e instanceof Error
+                ? e.message
+                : "Review the available time before making a new draft.";
+          }
+        }
+        await persist(
+          next,
+          false,
+          refreshed.known,
+          messages,
+          nextPlan,
+          nextApproved,
+        );
+        if (refreshed.changed || stale) {
+          planCalendar.current = calendarRevision;
+          planActivities.current = activityRevision;
+        }
+        setSource(next);
+        setSample(false);
+        setUrl(next.pageId);
+        setKnown(refreshed.known);
+        setPlan(nextPlan);
+        setApproved(nextApproved);
+        setSourceNotice(
+          refreshed.changed || stale
+            ? nextPlan
+              ? "Your list is updated and a fresh draft is ready to review. Your conversation and confirmed day details are kept."
+              : "Your list is updated. Your conversation and day details are kept. " +
+                (reason || "Finish discussing today to make a fresh draft.")
+            : "Your list is up to date. Your conversation and current plan are kept.",
+        );
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not read the list.");
     } finally {
@@ -360,31 +415,40 @@ export default function NotionDailyPlanner() {
         );
       const now = new Date();
       const externalEvents = calendarBusyToday(personal.state.calendars, now);
-      const compact = source.items
-        .filter((item) => item.completion !== "checked")
-        .slice(0, 40)
-        .map((item) => ({
-          key: item.key,
-          title: item.title,
-          subject: item.subject,
-          today: item.yellowHighlighted,
-        }));
       const result = await brain.ask(
         {
           mode: "notion_day",
           persona: { name: "Daylight", tone: "calm" },
-          messages: nextMessages,
+          messages: nextMessages.slice(-11),
           context: JSON.stringify({
             today: day,
             localTime: now.toTimeString().slice(0, 5),
-            source: {
-              title: source.title,
-              readAt: source.readAt,
-              items: compact,
-              omitted: Math.max(0, source.items.length - compact.length),
-              weeklyNotes: source.weeklyNotes.slice(0, 8),
-            },
+            source: daySourceContext(
+              source,
+              known,
+              text,
+              brain.provider === "browser",
+            ),
             knownDay: known,
+            existingPlan: plan
+              ? {
+                  approved,
+                  day: plan.day,
+                  entries: plan.entries
+                    .slice(0, brain.provider === "browser" ? 6 : 20)
+                    .map((entry) => ({
+                      title: entry.title.slice(0, 160),
+                      kind: entry.kind,
+                      start: new Date(entry.start).toTimeString().slice(0, 5),
+                      end: new Date(entry.end).toTimeString().slice(0, 5),
+                    })),
+                  omitted: Math.max(
+                    0,
+                    plan.entries.length -
+                      (brain.provider === "browser" ? 6 : 20),
+                  ),
+                }
+              : null,
             selectedTrainingActivities: selectedActivities,
             plannedMealsToday:
               personal.state.nutrition.plans
@@ -427,9 +491,10 @@ export default function NotionDailyPlanner() {
         }
       }
       const complete: Message[] = [
-        ...nextMessages,
+        ...messages,
+        { role: "user", content: text.trim() },
         { role: "assistant", content: result.reply },
-      ];
+      ].slice(-200) as Message[];
       setMessages(complete);
       setKnown(nextKnown);
       if (updatePlan) {
@@ -635,24 +700,35 @@ export default function NotionDailyPlanner() {
               <label htmlFor="notion-page">Running list page link</label>
               <input
                 id="notion-page"
-                type="url"
+                type="text"
+                inputMode="url"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 required
                 placeholder="https://www.notion.so/…"
               />
-              <button disabled={busy || savingDay || brain.thinking}>Read list</button>
+              <button disabled={busy || savingDay || brain.thinking}>
+                Read list
+              </button>
             </form>
           )}
+          {sourceNotice && (
+            <p role="status" className={styles.muted}>
+              {sourceNotice}
+            </p>
+          )}
           {source && !connected && configured && (
-            <button disabled={busy || savingDay || brain.thinking} onClick={connect}>
+            <button
+              disabled={busy || savingDay || brain.thinking}
+              onClick={connect}
+            >
               Connect Notion
             </button>
           )}
           {snapshot && (
             <button
               disabled={busy || savingDay || brain.thinking}
-              onClick={() => useSource(snapshot, false)}
+              onClick={() => void readList(snapshot)}
             >
               Use my local Notion snapshot
             </button>
@@ -801,7 +877,9 @@ export default function NotionDailyPlanner() {
           {source && (
             <DayDetailsReview
               known={known}
-              disabled={savingDay || brain.thinking || brain.loading || !personal.state}
+              disabled={
+                savingDay || brain.thinking || brain.loading || !personal.state
+              }
               onDraft={draftWithoutAI}
             />
           )}{" "}
@@ -888,7 +966,10 @@ export default function NotionDailyPlanner() {
                 ))}
               </details>
             )}
-            <button disabled={savingDay || approved || brain.thinking} onClick={approve}>
+            <button
+              disabled={savingDay || approved || brain.thinking}
+              onClick={approve}
+            >
               {approved ? "Saved for today" : "Use this plan"}
             </button>
             {approved && (

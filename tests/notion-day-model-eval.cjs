@@ -16,7 +16,18 @@ require.extensions[".ts"] = (m, file) =>
 const { askLocalModel } = require("../src/lib/local-model.ts"),
   { emptyNotionDay } = require("../src/lib/notion-day-model.ts");
 const results = [];
-async function ask(name, messages, known = emptyNotionDay()) {
+const originalFetch = globalThis.fetch;
+globalThis.fetch = async (...args) => {
+  const response = await originalFetch(...args);
+  if (!response.ok)
+    console.error(
+      "Synthetic model evaluation HTTP failure",
+      response.status,
+      (await response.clone().text()).slice(0, 1000),
+    );
+  return response;
+};
+async function ask(name, messages, known = emptyNotionDay(), extra = {}) {
   const result = await askLocalModel(
     {
       mode: "notion_day",
@@ -32,7 +43,7 @@ async function ask(name, messages, known = emptyNotionDay()) {
               key: "q",
               title: "Review chapter",
               subject: "Literature",
-              yellowHighlighted: true,
+              today: true,
             },
           ],
           weeklyNotes: [],
@@ -40,6 +51,7 @@ async function ask(name, messages, known = emptyNotionDay()) {
         knownDay: known,
         externalCalendarEvents: [],
         selectedTrainingActivities: [],
+        ...extra,
       }),
       messages,
     },
@@ -115,6 +127,36 @@ async function ask(name, messages, known = emptyNotionDay()) {
   assert.equal(unclear.dailyContext.eventsDiscussed, false);
   assert.ok(unclear.dailyContext.events.every((e) => !e.start && !e.end));
   console.log("PASS missing practice time is not invented.");
+  const recalled = await ask(
+    "highlighted homework read-back",
+    [{ role: "user", content: "What homework do I have highlighted today?" }],
+    correction.dailyContext,
+  );
+  assert.match(recalled.reply, /chapter/i);
+  assert.deepEqual(recalled.dailyContext, correction.dailyContext);
+  console.log(
+    "PASS real reply recalls the highlighted Notion homework without restarting intake.",
+  );
+  const calendar = await ask(
+    "calendar event read-back",
+    [
+      {
+        role: "user",
+        content: "When is my dentist appointment from my imported calendar?",
+      },
+    ],
+    correction.dailyContext,
+    {
+      externalCalendarEvents: [
+        { title: "Dentist", start: "18:30", end: "19:00" },
+      ],
+    },
+  );
+  assert.match(calendar.reply, /(?:6:30\s*(?:pm|p\.m\.)|18:30)/i);
+  assert.deepEqual(calendar.dailyContext, correction.dailyContext);
+  console.log(
+    "PASS real reply reads the imported event time without adding or changing appointments.",
+  );
 })().catch((e) => {
   console.error(e);
   process.exitCode = 1;

@@ -33,7 +33,7 @@ test("preferences persist, unknown allergies stay unknown and stale saves cannot
 test("corrupt records and full storage preserve prior data; allergy status requires explicit consistency", () => {
   let raw = "corrupted";
   const storage = {
-      getItem: () => raw,
+      getItem: (key: string) => (key === personalWorkspaceKey ? raw : null),
       setItem: () => {
         throw Error("quota");
       },

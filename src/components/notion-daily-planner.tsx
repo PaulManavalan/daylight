@@ -1,5 +1,7 @@
 "use client";
-import {savedDaySessionSchema} from "@/lib/day-session";
+import { savedDaySessionSchema } from "@/lib/day-session";
+import { recoverLocalRestore, RESTORE_PENDING } from "@/lib/workspace-backup";
+import { shouldUpdateDayPlan } from "@/lib/day-plan-update";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import Link from "next/link";
@@ -92,6 +94,7 @@ export default function NotionDailyPlanner() {
   useEffect(() => {
     setDay(today());
     try {
+      recoverLocalRestore(localStorage);
       const raw = localStorage.getItem("daylight.notion-day.v1." + today());
       savedVersion.current = raw;
       if (raw) {
@@ -137,6 +140,10 @@ export default function NotionDailyPlanner() {
     nextPlan: NotionDayPlan | null,
     nextApproved: boolean,
   ) {
+    if (localStorage.getItem(RESTORE_PENDING) !== null)
+      throw new Error(
+        "Finish the interrupted workspace restore before saving this day.",
+      );
     if (today() !== day)
       throw new Error("A new day has started. Reload to start a fresh plan.");
     const value = savedSchema.parse({
@@ -330,10 +337,13 @@ export default function NotionDailyPlanner() {
         throw new Error(
           "The model did not return a usable day context. Your message is kept.",
         );
-      const nextKnown = notionDayContextSchema.parse(result.dailyContext);
-      let nextPlan: NotionDayPlan | null = null;
+      const parsedKnown = notionDayContextSchema.parse(result.dailyContext);
+      const updatePlan = shouldUpdateDayPlan(known, parsedKnown, text);
+      const nextKnown = updatePlan ? parsedKnown : known;
+      let nextPlan: NotionDayPlan | null = updatePlan ? null : plan;
+      const nextApproved = updatePlan ? false : approved;
       let planningError = "";
-      if (dayIsReady(nextKnown)) {
+      if (updatePlan && dayIsReady(nextKnown)) {
         try {
           nextPlan = buildNotionDayPlan(
             source,
@@ -355,13 +365,15 @@ export default function NotionDailyPlanner() {
       ];
       setMessages(complete);
       setKnown(nextKnown);
-      planCalendar.current = calendarRevision;
-      planActivities.current = activityRevision;
+      if (updatePlan) {
+        planCalendar.current = calendarRevision;
+        planActivities.current = activityRevision;
+      }
       setPlan(nextPlan);
-      setApproved(false);
+      setApproved(nextApproved);
       setDraft("");
       try {
-        persist(source, sample, nextKnown, complete, nextPlan, false);
+        persist(source, sample, nextKnown, complete, nextPlan, nextApproved);
       } catch {
         planningError +=
           " Your conversation is available in this tab, but could not be saved on this browser.";

@@ -9,6 +9,8 @@ import {
 } from "@/lib/personal-workspace";
 import styles from "./notion-daily-planner.module.css";
 import { mealSlots } from "@/lib/nutrition";
+import { WorkspaceBackupControl } from "./workspace-backup";
+import { exportLocalWorkspace } from "@/lib/workspace-backup";
 const lines = (text: string) => [
   ...new Set(
     text
@@ -351,8 +353,8 @@ export default function PersonalPreferences() {
               ))}
             </div>
             <p className={styles.muted}>
-              This stores your interests. Live news retrieval and the meal
-              planner are tracked in the roadmap and are not connected yet.
+              Your interests guide future news retrieval. Meals use your saved
+              food preferences.
             </p>
             <button>Save preferences</button>
             <button
@@ -370,6 +372,34 @@ export default function PersonalPreferences() {
           </p>
         )}
         {message && <p role="status">{message}</p>}
+      </section>
+      <section className={styles.panel} style={{ marginTop: 24 }}>
+        <h2>Keep a copy of your Daylight</h2>
+        <p>
+          Export and restore your local tasks, SAT records, meals, training,
+          calendars, preferences and saved daily plans. Your account sign-in and
+          connection credentials are excluded.
+        </p>
+        <WorkspaceBackupControl
+          disabled={false}
+          onExport={() => {
+            try {
+              const data = exportLocalWorkspace(localStorage),
+                url = URL.createObjectURL(
+                  new Blob([JSON.stringify(data, null, 2)], {
+                    type: "application/json",
+                  }),
+                ),
+                link = document.createElement("a");
+              link.href = url;
+              link.download = "daylight-workspace.json";
+              link.click();
+              setTimeout(() => URL.revokeObjectURL(url), 1000);
+            } catch (e) {
+              setMessage((e as Error).message);
+            }
+          }}
+        />
       </section>
     </main>
   );

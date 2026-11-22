@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { recoverLocalRestore } from "@/lib/workspace-backup";
 import {
   PersonalWorkspaceStore,
   personalWorkspaceKey,
@@ -11,6 +12,7 @@ export function usePersonalWorkspace() {
   const raw = useRef<string | null>(null);
   function load() {
     try {
+      recoverLocalRestore(localStorage);
       const saved = new PersonalWorkspaceStore(localStorage).load();
       raw.current = saved.raw;
       setState(saved.state);

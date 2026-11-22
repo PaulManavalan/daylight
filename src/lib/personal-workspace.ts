@@ -87,6 +87,10 @@ interface Storage {
 export class PersonalWorkspaceStore {
   constructor(private storage: Storage) {}
   load() {
+    if (this.storage.getItem("daylight.restore.pending.v1") !== null)
+      throw new Error(
+        "An interrupted workspace restore needs recovery. Open the full workspace to finish it before editing personal data.",
+      );
     const raw = this.storage.getItem(personalWorkspaceKey);
     if (raw === null) return { state: defaultPersonalWorkspace(), raw };
     try {
@@ -98,6 +102,10 @@ export class PersonalWorkspaceStore {
     }
   }
   save(next: PersonalWorkspace, expected: string | null) {
+    if (this.storage.getItem("daylight.restore.pending.v1") !== null)
+      throw new Error(
+        "Finish the interrupted workspace restore before editing personal data.",
+      );
     const parsed = personalWorkspaceSchema.safeParse({
       ...next,
       updatedAt: new Date().toISOString(),

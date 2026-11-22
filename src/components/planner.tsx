@@ -18,7 +18,7 @@ import {recordDailyCheckIn,removeDailyCheckIn,type DailyCheckIn} from '@/lib/dai
 import {SatWorkspace} from "./sat-workspace";
 import {SatStore,type SatState} from "@/lib/sat";
 import { WorkspaceBackupControl } from "./workspace-backup";
-import {rawWorkspaceRecovery} from '@/lib/workspace-backup';
+import {rawWorkspaceRecovery,focusedWorkspaceExport} from '@/lib/workspace-backup';
 import {NotionPanel} from './notion-panel';
 import { AuthDialog } from "./auth-dialog";
 import { cloudRepository, localRepository } from "@/lib/repository";
@@ -219,7 +219,7 @@ export function Planner() {
     if(loadProblem){setError("Download a recovery file before restoring your unreadable workspace.");return;}
     try {
       const sat=new SatStore(localStorage,user?.id ?? "local-demo").load().state;
-      const link=document.createElement("a"),url=URL.createObjectURL(new Blob([JSON.stringify({version:1,exported_at:new Date().toISOString(),tasks,planning:planningExport,sat},null,2)],{type:"application/json"}));
+      const link=document.createElement("a"),url=URL.createObjectURL(new Blob([JSON.stringify({version:1,exported_at:new Date().toISOString(),tasks,planning:planningExport,sat,...(!user?{focused:focusedWorkspaceExport(localStorage)}:{})},null,2)],{type:"application/json"}));
       link.href=url;link.download="daylight-tasks.json";link.click();URL.revokeObjectURL(url);
     } catch(e) {setError(e instanceof Error?e.message:"The workspace backup could not be exported.");}
   }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { wantsOpenChat } from "./chat-actions";
 import type { BrainRequest } from "./assistant-brain";
 import { athleteNutritionGuidance } from "./athlete-nutrition-guidance";
 const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
@@ -93,10 +94,11 @@ export function notionDayModelReply(raw: unknown, request?: BrainRequest) {
       request.messages.filter((message) => message.role === "user").at(-1)
         ?.content ?? "";
     if (
-      /\b(?:just want to (?:talk|chat)|just vent|what if|thanks|thank you|feel(?:ing)? overwhelmed)\b/i.test(
+      wantsOpenChat(latest) ||
+      (/\b(?:just want to (?:talk|chat)|just vent|what if|thanks|thank you|feel(?:ing)? overwhelmed)\b/i.test(
         latest,
       ) &&
-      !/[0-9]/.test(latest)
+        !/[0-9]/.test(latest))
     )
       result.data.dailyContext = structuredClone(known);
     const said = request.messages

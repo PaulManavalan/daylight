@@ -1,6 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import {
+  workspacePrivacySchema,
+  erasureReceiptSchema,
+  WorkspacePrivacyChangedError,
+} from "./workspace-privacy";
+import {
   validateCloudDocuments,
   validateDocument,
   WorkspaceConflictError,
@@ -15,6 +20,11 @@ export function supabaseDocuments(
 ): DocumentTransport {
   z.uuid().parse(owner);
   function failure(error: { code?: string; message?: string }) {
+    if (
+      error.code === "40001" &&
+      error.message?.includes("workspace_privacy_changed")
+    )
+      return new WorkspacePrivacyChangedError();
     if (error.code === "40001") return new WorkspaceConflictError();
     if (["42P01", "PGRST202", "42883"].includes(error.code ?? ""))
       return Error(
@@ -35,6 +45,15 @@ export function supabaseDocuments(
   }
   return {
     owner,
+    async readPrivacy() {
+      await verifyIdentity();
+      const { data, error } = await db
+        .rpc("read_workspace_privacy", { p_owner: owner })
+        .abortSignal(AbortSignal.timeout(15000));
+      if (error) throw failure(error);
+      await verifyIdentity();
+      return workspacePrivacySchema.parse(data);
+    },
     async readAll() {
       await verifyIdentity();
       const rows: unknown[] = [];
@@ -59,7 +78,7 @@ export function supabaseDocuments(
         "This account has too many documents to load safely. No cached data was replaced.",
       );
     },
-    async save(changes: DocumentChange[]) {
+    async save(changes: DocumentChange[], generation: number) {
       await verifyIdentity();
       if (changes.length < 1 || changes.length > 200)
         throw Error("Sync up to 200 documents per batch.");
@@ -78,11 +97,26 @@ export function supabaseDocuments(
         .rpc("save_workspace_documents", {
           p_owner: owner,
           p_changes: prepared,
+          p_generation: generation,
         })
         .abortSignal(AbortSignal.timeout(20000));
       if (error) throw failure(error);
       await verifyIdentity();
       return validateCloudDocuments(data, owner);
+    },
+    async erase(scope, generation, expected) {
+      await verifyIdentity();
+      const { data, error } = await db
+        .rpc("erase_workspace_scope", {
+          p_owner: owner,
+          p_scope: scope,
+          p_generation: generation,
+          p_expected: expected,
+        })
+        .abortSignal(AbortSignal.timeout(20000));
+      if (error) throw failure(error);
+      await verifyIdentity();
+      return erasureReceiptSchema.parse(data);
     },
   };
 }

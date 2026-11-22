@@ -40,9 +40,27 @@ test("account outbox and PostgreSQL CAS reconcile two devices while keeping a se
     await db.exec(
       await readFile("supabase/migrations/002_workspace_documents.sql", "utf8"),
     );
+    await db.exec(
+      await readFile("supabase/migrations/003_workspace_privacy.sql", "utf8"),
+    );
     function transport(owner: string): DocumentTransport {
       return {
         owner,
+        async readPrivacy() {
+          return db.transaction(async (tx) => {
+            await tx.exec("set local role authenticated");
+            await tx.query(
+              "select set_config('request.jwt.claim.sub',$1,true)",
+              [owner],
+            );
+            return (
+              await tx.query<{ p: { generation: number; erasures: {} } }>(
+                "select public.read_workspace_privacy($1) p",
+                [owner],
+              )
+            ).rows[0].p;
+          });
+        },
         async readAll() {
           return db.transaction(async (tx) => {
             await tx.exec("set local role authenticated");
@@ -59,7 +77,7 @@ test("account outbox and PostgreSQL CAS reconcile two devices while keeping a se
             );
           });
         },
-        async save(changes) {
+        async save(changes, generation) {
           try {
             return await db.transaction(async (tx) => {
               await tx.exec("set local role authenticated");
@@ -68,8 +86,8 @@ test("account outbox and PostgreSQL CAS reconcile two devices while keeping a se
                 [owner],
               );
               const rows = await tx.query<{ saved: unknown }>(
-                "select public.save_workspace_documents($1,$2::jsonb) as saved",
-                [owner, JSON.stringify(changes)],
+                "select public.save_workspace_documents($1,$2::jsonb,$3) as saved",
+                [owner, JSON.stringify(changes), generation],
               );
               return validateCloudDocuments(rows.rows[0].saved, owner);
             });

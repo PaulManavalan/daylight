@@ -3,6 +3,11 @@ import { personalWorkspaceSchema } from "./personal-workspace";
 import { satStateSchema } from "./sat";
 import { planningSchema } from "./scheduling";
 import { savedDaySessionSchema } from "./day-session";
+import type {
+  WorkspacePrivacy,
+  ErasureScope,
+  ErasureReceipt,
+} from "./workspace-privacy";
 
 export const MAX_DOCUMENT_BYTES = 2 * 1024 * 1024;
 export const documentKeySchema = z
@@ -57,8 +62,14 @@ export interface DocumentChange {
 }
 export interface DocumentTransport {
   readonly owner: string;
+  readPrivacy(): Promise<WorkspacePrivacy>;
   readAll(): Promise<CloudDocument[]>;
-  save(changes: DocumentChange[]): Promise<CloudDocument[]>;
+  save(changes: DocumentChange[], generation: number): Promise<CloudDocument[]>;
+  erase?(
+    scope: ErasureScope,
+    generation: number,
+    expected: { key: string; revision: number }[],
+  ): Promise<ErasureReceipt>;
 }
 export class WorkspaceConflictError extends Error {
   constructor() {

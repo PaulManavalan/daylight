@@ -1,5 +1,16 @@
 import { z } from "zod";
 import {
+  emptyPrivacy,
+  workspacePrivacySchema,
+  erasePayload,
+  scopeIncludesKey,
+  WorkspacePrivacyChangedError,
+  type WorkspacePrivacy,
+  type ErasureScope,
+  type ErasureReview,
+  erasureReceiptSchema,
+} from "./workspace-privacy";
+import {
   validateDocument,
   validateCloudDocuments,
   stableJSON,
@@ -22,6 +33,7 @@ const cacheSchema = z.object({
   version: z.literal(1),
   owner: z.uuid(),
   ready: z.boolean(),
+  privacy: workspacePrivacySchema.default(emptyPrivacy),
   documents: z.record(z.string(), entrySchema),
   conflicts: z.record(z.string(), conflictSchema),
 });
@@ -41,10 +53,13 @@ export interface WorkspaceSyncSnapshot {
   message: string;
   dirty: number;
   conflicts: string[];
+  generation: number;
+  privacyBlocked: boolean;
 }
 interface CacheStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
+  removeItem?(key: string): void;
 }
 export type WorkspaceLock = <T>(action: () => Promise<T>) => Promise<T>;
 export function browserWorkspaceLock(owner: string): WorkspaceLock {
@@ -62,13 +77,14 @@ const empty = (owner: string): Cache => ({
   version: 1,
   owner,
   ready: false,
+  privacy: emptyPrivacy(),
   documents: {},
   conflicts: {},
 });
-const missing = (): Entry => ({
+const missing = (sequence = 0): Entry => ({
   payload: null,
   revision: 0,
-  sequence: 0,
+  sequence,
   dirty: false,
 });
 
@@ -78,6 +94,7 @@ export class AccountWorkspace {
   private cache: Cache;
   private raw: string | null = null;
   private disposed = false;
+  private privacyBlocked = false;
   private active: Promise<void> | null = null;
   private listeners = new Set<() => void>();
   private view: WorkspaceSyncSnapshot = {
@@ -86,6 +103,8 @@ export class AccountWorkspace {
     message: "Loading account data…",
     dirty: 0,
     conflicts: [],
+    generation: 0,
+    privacyBlocked: false,
   };
   constructor(
     private storage: CacheStorage,
@@ -101,6 +120,7 @@ export class AccountWorkspace {
     this.publish("loading", "Checking your account data…");
   }
   private readCache() {
+    if (this.privacyBlocked) return;
     const raw = this.storage.getItem(this.key);
     if (raw === this.raw) return;
     let parsed: Cache;
@@ -144,6 +164,8 @@ export class AccountWorkspace {
       message,
       dirty: Object.values(this.cache.documents).filter((e) => e.dirty).length,
       conflicts: Object.keys(this.cache.conflicts).sort(),
+      generation: this.cache.privacy.generation,
+      privacyBlocked: this.privacyBlocked,
     };
     for (const listener of this.listeners) listener();
   }
@@ -161,10 +183,153 @@ export class AccountWorkspace {
   document(key: string) {
     this.readCache();
     validateDocument(key, null);
-    return structuredClone(this.cache.documents[key] ?? missing());
+    return structuredClone(
+      this.cache.documents[key] ?? missing(this.cache.privacy.generation),
+    );
   }
   recovery() {
+    if (this.privacyBlocked) return null;
     return this.storage.getItem(this.key);
+  }
+  private async applyPrivacy(raw: WorkspacePrivacy) {
+    const privacy = workspacePrivacySchema.parse(raw);
+    await this.lock(async () => {
+      this.readCache();
+      if (privacy.generation < this.cache.privacy.generation)
+        throw Error(
+          "The server returned an older deletion checkpoint. No drafts were uploaded.",
+        );
+      if (
+        privacy.generation === this.cache.privacy.generation &&
+        !this.privacyBlocked
+      )
+        return;
+      const next = structuredClone(this.cache);
+      const scopes = Object.entries(privacy.erasures)
+        .filter(([, g]) => g > this.cache.privacy.generation)
+        .map(([scope]) => scope as ErasureScope);
+      for (const [key, entry] of Object.entries(next.documents)) {
+        if (!scopes.some((scope) => scopeIncludesKey(scope, key))) continue;
+        const payload = erasePayload(key, entry.payload, scopes);
+        next.documents[key] = {
+          ...entry,
+          payload,
+          sequence: entry.sequence + 1,
+          dirty: payload === null ? false : entry.dirty,
+        };
+        delete next.conflicts[key];
+      }
+      for (const key of Object.keys(next.conflicts))
+        if (scopes.some((scope) => scopeIncludesKey(scope, key)))
+          delete next.conflicts[key];
+      next.privacy = privacy;
+      try {
+        for (const suffix of [".before-import", ".before-restore"]) {
+          if (this.storage.removeItem)
+            this.storage.removeItem(this.key + suffix);
+          else
+            this.storage.setItem(
+              this.key + suffix,
+              JSON.stringify(empty(this.owner)),
+            );
+        }
+        this.writeCache(next);
+        this.privacyBlocked = false;
+      } catch {
+        this.cache = { ...next, ready: false };
+        this.privacyBlocked = true;
+        this.publish(
+          "error",
+          "The deletion checkpoint was received, but this browser could not clear its retained copies. Keep this workspace closed and allow browser storage before retrying.",
+        );
+        throw Error(this.view.message);
+      }
+      this.publish("syncing", "Applying your account deletion checkpoint…");
+    });
+  }
+  private async readRemote() {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const before = workspacePrivacySchema.parse(
+        await this.transport.readPrivacy(),
+      );
+      const rows = validateCloudDocuments(
+        await this.transport.readAll(),
+        this.owner,
+      );
+      const after = workspacePrivacySchema.parse(
+        await this.transport.readPrivacy(),
+      );
+      if (stableJSON(before) !== stableJSON(after)) continue;
+      if (this.disposed) return;
+      await this.applyPrivacy(after);
+      await this.merge(rows, after.generation);
+      return;
+    }
+    throw Error(
+      "Account deletion settings changed while loading. Retry sync before editing.",
+    );
+  }
+  prepareErasure(scope: ErasureScope): ErasureReview {
+    this.readCache();
+    if (!this.cache.ready || this.privacyBlocked)
+      throw Error("Load and sync this account before reviewing deletion.");
+    return {
+      scope,
+      generation: this.cache.privacy.generation,
+      documents: Object.entries(this.cache.documents)
+        .filter(([key]) => scopeIncludesKey(scope, key))
+        .map(([key, e]) => ({
+          key,
+          revision: e.revision,
+          sequence: e.sequence,
+        }))
+        .sort((a, b) => a.key.localeCompare(b.key)),
+    };
+  }
+  async erase(review: ErasureReview) {
+    if (!this.transport.erase)
+      throw Error("Account deletion is unavailable on this deployment.");
+    if (this.active) await this.active;
+    await this.lock(async () => {
+      if (
+        this.disposed ||
+        stableJSON(this.prepareErasure(review.scope)) !== stableJSON(review)
+      )
+        throw Error(
+          "Account records changed after review. Review deletion again.",
+        );
+    });
+    let receipt;
+    try {
+      receipt = erasureReceiptSchema.parse(
+        await this.transport.erase(
+          review.scope,
+          review.generation,
+          review.documents.map(({ key, revision }) => ({ key, revision })),
+        ),
+      );
+    } catch (error) {
+      await this.sync();
+      throw Error(
+        "Deletion could not be confirmed. Sync and review the current records before trying again. " +
+          (error instanceof Error ? error.message : ""),
+      );
+    }
+    if (
+      receipt.scope !== review.scope ||
+      receipt.generation !== review.generation + 1
+    )
+      throw Error(
+        "Deletion response could not be verified. Retry sync before continuing.",
+      );
+    await this.applyPrivacy(receipt);
+    await this.sync();
+    if (this.privacyBlocked) throw Error(this.view.message);
+    this.publish(
+      this.view.status,
+      "Selected account deletion confirmed. Retained recovery copies on this device were cleared. Other devices apply the deletion when they sync.",
+    );
+    return receipt;
   }
   keys() {
     this.readCache();
@@ -190,7 +355,8 @@ export class AccountWorkspace {
         throw Error("Load your account before importing records.");
       const next = structuredClone(this.cache);
       for (const change of prepared) {
-        const previous = next.documents[change.key] ?? missing();
+        const previous =
+          next.documents[change.key] ?? missing(this.cache.privacy.generation);
         if (previous.sequence !== change.expectedSequence)
           throw Error(
             "Account data changed after this review. Review the import again.",
@@ -228,7 +394,8 @@ export class AccountWorkspace {
       this.readCache();
       if (!this.cache.ready)
         throw Error("Load your account before saving a new draft.");
-      const previous = this.cache.documents[key] ?? missing();
+      const previous =
+        this.cache.documents[key] ?? missing(this.cache.privacy.generation);
       if (previous.sequence !== expectedSequence)
         throw Error(
           "This account document changed since you opened it. Reload before saving.",
@@ -257,6 +424,8 @@ export class AccountWorkspace {
     await this.lock(async () => {
       if (this.disposed) throw Error("This workspace is no longer active.");
       this.readCache();
+      if (!this.cache.ready || this.privacyBlocked)
+        throw Error("Load your account before resolving records.");
       const conflict = this.cache.conflicts[key],
         entry = this.cache.documents[key];
       if (
@@ -289,10 +458,14 @@ export class AccountWorkspace {
     this.readCache();
     return structuredClone(this.cache.conflicts[key] ?? null);
   }
-  private async merge(rows: CloudDocument[]) {
+  private async merge(rows: CloudDocument[], generation: number) {
     await this.lock(async () => {
       if (this.disposed) return;
       this.readCache();
+      if (this.privacyBlocked || this.cache.privacy.generation !== generation)
+        throw Error(
+          "The deletion checkpoint changed. Retry sync before editing.",
+        );
       const next = structuredClone(this.cache),
         remote = new Map(rows.map((row) => [row.document_key, row]));
       for (const [key, row] of remote) {
@@ -348,12 +521,7 @@ export class AccountWorkspace {
   private async performSync() {
     this.publish("syncing", "Syncing your account…");
     try {
-      const rows = validateCloudDocuments(
-        await this.transport.readAll(),
-        this.owner,
-      );
-      if (this.disposed) return;
-      await this.merge(rows);
+      await this.readRemote();
       for (let pass = 0; pass < 5; pass++) {
         if (this.disposed) return;
         this.readCache();
@@ -387,6 +555,7 @@ export class AccountWorkspace {
           return;
         }
         let saved: CloudDocument[];
+        const generation = this.cache.privacy.generation;
         try {
           saved = validateCloudDocuments(
             await this.transport.save(
@@ -395,17 +564,16 @@ export class AccountWorkspace {
                 expectedRevision: entry.revision,
                 payload: entry.payload,
               })),
+              generation,
             ),
             this.owner,
           );
         } catch (error) {
-          if (error instanceof WorkspaceConflictError) {
-            await this.merge(
-              validateCloudDocuments(
-                await this.transport.readAll(),
-                this.owner,
-              ),
-            );
+          if (
+            error instanceof WorkspaceConflictError ||
+            error instanceof WorkspacePrivacyChangedError
+          ) {
+            await this.readRemote();
             continue;
           }
           throw error;
@@ -428,6 +596,7 @@ export class AccountWorkspace {
           );
         await this.lock(async () => {
           this.readCache();
+          if (this.cache.privacy.generation !== generation) return;
           const next = structuredClone(this.cache);
           for (const [key, sent] of pending) {
             const current = next.documents[key],

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useAccountWorkspace } from "./account-workspace-context";
 import { exportLocalWorkspace } from "@/lib/workspace-backup";
 import css from "./account-workspace.module.css";
+import AccountDataControls from "./account-data-controls";
 
 type Change = { key: string; payload: unknown; expectedSequence: number };
 const title = (key: string) =>
@@ -28,6 +29,7 @@ export default function AccountSyncPanel() {
     [review, setReview] = useState<Change[] | null>(null),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
+    [restoreConsent, setRestoreConsent] = useState(false),
     [notice, setNotice] = useState("");
   if (!account) return null;
   function prepareImport() {
@@ -59,6 +61,7 @@ export default function AccountSyncPanel() {
       if (!changes.length)
         throw Error("There are no saved local records to copy.");
       setReview(changes);
+      setRestoreConsent(false);
       setError("");
     } catch (e) {
       setError((e as Error).message);
@@ -68,6 +71,10 @@ export default function AccountSyncPanel() {
     if (!review || busy) return;
     setBusy(true);
     try {
+      if ((status?.generation ?? 0) > 0 && !restoreConsent)
+        throw Error(
+          "Confirm restoring previously deleted data before copying local records.",
+        );
       if (status?.dirty || status?.conflicts.length)
         throw Error(
           "The account changed during review. Sync and review again.",
@@ -140,6 +147,17 @@ export default function AccountSyncPanel() {
           <button disabled={busy} onClick={() => void importReviewed()}>
             Copy reviewed records to this account
           </button>
+          {(status?.generation ?? 0) > 0 && (
+            <label>
+              <input
+                type="checkbox"
+                checked={restoreConsent}
+                onChange={(e) => setRestoreConsent(e.target.checked)}
+              />
+              I want to copy these records even if they restore previously
+              deleted account data.
+            </label>
+          )}
           <button disabled={busy} onClick={() => setReview(null)}>
             Keep workspaces separate
           </button>
@@ -207,6 +225,7 @@ export default function AccountSyncPanel() {
           </article>
         );
       })}
+      <AccountDataControls />
       {notice && <p role="status">{notice}</p>}
       {error && <p role="alert">{error}</p>}
     </section>

@@ -140,7 +140,7 @@ export function AccountWorkspaceProvider({
     matching = !!owner && account?.owner === owner,
     ready = local || (matching && status?.ready && opened === owner);
   function downloadRecovery() {
-    if (!owner || local) return;
+    if (!owner || local || status?.privacyBlocked) return;
     const raw = localStorage.getItem(accountCacheKey(owner));
     if (!raw) return;
     const url = URL.createObjectURL(
@@ -157,6 +157,7 @@ export function AccountWorkspaceProvider({
       return (
         !!owner &&
         !local &&
+        !status?.privacyBlocked &&
         localStorage.getItem(accountCacheKey(owner)) !== null
       );
     } catch {
@@ -197,7 +198,7 @@ export function AccountWorkspaceProvider({
       </div>
       {ready ? (
         <Context.Provider
-          key={owner}
+          key={owner + ":" + (status?.generation ?? 0)}
           value={{
             owner: owner!,
             account: local ? null : account,

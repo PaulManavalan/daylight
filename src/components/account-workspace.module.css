@@ -74,7 +74,7 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
-.versions pre {
+.panel pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-size: 12px;
@@ -83,6 +83,25 @@
   padding: 14px;
   background: #142119;
   border-radius: 12px;
+}
+.panel label {
+  display: block;
+  line-height: 1.6;
+  margin: 12px 0;
+  overflow-wrap: anywhere;
+}
+.panel input[type="file"],
+.panel select {
+  display: block;
+  max-width: 100%;
+  margin-top: 8px;
+}
+.panel section {
+  min-width: 0;
+}
+.panel button:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 .panel article {
   border-top: 1px solid #344335;

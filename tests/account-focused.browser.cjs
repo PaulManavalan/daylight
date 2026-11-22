@@ -44,6 +44,7 @@ const session = (owner) => ({
   },
 });
 const documents = new Map(),
+  privacy = new Map(),
   errors = [],
   privateReads = [];
 let offlineOne = false;
@@ -108,9 +109,98 @@ function ownerFrom(request) {
               .slice(offset, offset + limit);
           return route.fulfill({ json: rows });
         }
+        if (url.pathname === "/rest/v1/rpc/read_workspace_privacy") {
+          assert.equal(request.postDataJSON().p_owner, user);
+          return route.fulfill({
+            json: privacy.get(user) ?? { generation: 0, erasures: {} },
+          });
+        }
+        if (url.pathname === "/rest/v1/rpc/erase_workspace_scope") {
+          const body = request.postDataJSON(),
+            current = privacy.get(user) ?? { generation: 0, erasures: {} };
+          assert.equal(body.p_owner, user);
+          if (body.p_generation !== current.generation)
+            return route.fulfill({
+              status: 409,
+              json: { code: "40001", message: "workspace_privacy_changed" },
+            });
+          const includes = (key) =>
+            body.p_scope === "all" ||
+            (body.p_scope === "sat" && key === "sat") ||
+            (body.p_scope === "days" && key.startsWith("day:")) ||
+            (["meals", "training", "calendars", "preferences"].includes(
+              body.p_scope,
+            ) &&
+              key === "personal");
+          const rows = [...documents.values()].filter(
+            (r) => r.user_id === user && includes(r.document_key),
+          );
+          if (
+            rows.some(
+              (r) =>
+                !body.p_expected.some(
+                  (e) => e.key === r.document_key && e.revision === r.revision,
+                ),
+            )
+          )
+            return route.fulfill({
+              status: 409,
+              json: { code: "40001", message: "workspace_revision_conflict" },
+            });
+          for (const row of rows) {
+            const next = structuredClone(row);
+            next.revision++;
+            next.updated_at = new Date().toISOString();
+            if (["all", "sat", "days"].includes(body.p_scope))
+              next.payload = null;
+            else if (next.payload && body.p_scope === "preferences") {
+              next.payload.displayName = "";
+              next.payload.food = {
+                likes: [],
+                dislikes: [],
+                ingredientExceptions: [],
+                favoriteMeals: [],
+                allergyStatus: "unknown",
+                allergies: [],
+                meals: null,
+              };
+              next.payload.news = [
+                "US",
+                "World",
+                "Politics",
+                "Technology",
+                "AI",
+                "Business",
+                "Science",
+                "Sports",
+              ];
+            } else throw Error("Untested synthetic deletion scope");
+            documents.set(user + ":" + row.document_key, next);
+          }
+          const receipt = {
+            generation: current.generation + 1,
+            erasures: {
+              ...current.erasures,
+              [body.p_scope]: current.generation + 1,
+            },
+          };
+          privacy.set(user, receipt);
+          return route.fulfill({
+            json: {
+              ...receipt,
+              scope: body.p_scope,
+              changedDocuments: rows.length,
+            },
+          });
+        }
         if (url.pathname === "/rest/v1/rpc/save_workspace_documents") {
           const body = request.postDataJSON();
           assert.equal(body.p_owner, user);
+          if (body.p_generation !== (privacy.get(user)?.generation ?? 0))
+            return route.fulfill({
+              status: 409,
+              json: { code: "40001", message: "workspace_privacy_changed" },
+            });
           if (
             body.p_changes.some(
               (c) =>
@@ -469,6 +559,100 @@ function ownerFrom(request) {
       "Reviewed local B",
     );
     await firstOffline.context.close();
+    await other.page.goto(server.url + "/day/preferences");
+    const downloaded = other.page.waitForEvent("download");
+    await other.page
+      .getByRole("button", {
+        name: "Export portable account backup",
+        exact: true,
+      })
+      .click();
+    const backupText = await require("node:fs/promises").readFile(
+      await (await downloaded).path(),
+      "utf8",
+    );
+    await other.page
+      .getByLabel("Records to delete", { exact: true })
+      .selectOption("preferences");
+    await other.page
+      .getByRole("button", { name: "Review account deletion", exact: true })
+      .click();
+    await other.page
+      .getByRole("button", { name: "Cancel deletion", exact: true })
+      .click();
+    assert.equal(
+      documents.get(B + ":personal").payload.displayName,
+      "Reviewed local B",
+    );
+    await other.page
+      .getByRole("button", { name: "Review account deletion", exact: true })
+      .click();
+    await other.page
+      .getByLabel(
+        "I understand this removes these account records and retained recovery copies. I have saved anything I want to keep.",
+        { exact: true },
+      )
+      .check();
+    await other.page
+      .getByRole("button", {
+        name: "Delete reviewed account records",
+        exact: true,
+      })
+      .click();
+    await waitForDocument(
+      B + ":personal",
+      (r) => r?.payload.displayName === "",
+    );
+    await other.page.getByLabel("Your name", { exact: true }).waitFor();
+    assert.equal(
+      await other.page.getByLabel("Your name", { exact: true }).inputValue(),
+      "",
+    );
+    assert.equal(
+      await other.page.evaluate(
+        (owner) =>
+          localStorage.getItem(
+            "daylight.account-cache.v1." + owner + ".before-import",
+          ),
+        B,
+      ),
+      null,
+    );
+    await other.page
+      .getByLabel("Review an account backup", { exact: true })
+      .setInputFiles({
+        name: "backup.json",
+        mimeType: "application/json",
+        buffer: Buffer.from(backupText),
+      });
+    await other.page
+      .getByRole("region", { name: "Review account backup", exact: true })
+      .waitFor();
+    assert.equal(
+      await other.page
+        .getByRole("button", {
+          name: "Restore reviewed account records",
+          exact: true,
+        })
+        .isDisabled(),
+      true,
+    );
+    await other.page
+      .getByLabel(
+        "I reviewed the source account and want these records restored, including any data I previously deleted.",
+        { exact: true },
+      )
+      .check();
+    await other.page
+      .getByRole("button", {
+        name: "Restore reviewed account records",
+        exact: true,
+      })
+      .click();
+    await waitForDocument(
+      B + ":personal",
+      (r) => r?.payload.displayName === "Reviewed local B",
+    );
     await one.page.goto(server.url + "/day/preferences");
     await one.page.setViewportSize({ width: 390, height: 844 });
     await one.page.getByRole("region", { name: "Account sync" }).waitFor();

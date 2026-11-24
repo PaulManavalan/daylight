@@ -14,6 +14,16 @@ import { dayBriefing } from "@/lib/day-briefing";
 import styles from "./notion-daily-planner.module.css";
 import css from "./sat-practice-workspace.module.css";
 import NewsBriefingPanel from "./news-briefing-panel";
+import {
+  BookOpen,
+  CalendarDays,
+  Dumbbell,
+  GraduationCap,
+  Sunrise,
+  Utensils,
+} from "lucide-react";
+import DayNowPanel from "./day-now-panel";
+import dashboard from "./day-briefing-workspace.module.css";
 export default function DayBriefingWorkspace() {
   const { account } = useAccountWorkspace();
   const [brief, setBrief] = useState<ReturnType<typeof dayBriefing> | null>(
@@ -87,7 +97,7 @@ export default function DayBriefingWorkspace() {
       minute: "2-digit",
     });
   return (
-    <main className={styles.page}>
+    <main className={`${styles.page} ${dashboard.page}`}>
       <header className={styles.header}>
         <Link className={styles.logo} href="/day">
           Daylight
@@ -99,7 +109,9 @@ export default function DayBriefingWorkspace() {
         </nav>
       </header>
       <section className={styles.intro}>
-        <p className={styles.eyebrow}>YOUR DAY, TOGETHER</p>
+        <p className={`${styles.eyebrow} ${dashboard.date}`}>
+          <Sunrise size={17} aria-hidden="true" /> YOUR DAY, TOGETHER
+        </p>
         <h1>
           A little clarity.
           <br />
@@ -119,185 +131,252 @@ export default function DayBriefingWorkspace() {
       {!brief ? (
         <p>Loading your day…</p>
       ) : (
-        <div className={css.layout}>
-          <section className={styles.panel}>
-            <div className={styles.sectionTitle}>
-              <h2>What’s next?</h2>
+        <>
+          <nav
+            className={dashboard.overview}
+            aria-label="Today's saved records"
+          >
+            <Link href="/day" data-tone="amber">
+              <BookOpen aria-hidden="true" size={21} />
               <span>
-                {brief.day}
-                {brief.sample ? " · SAMPLE DATA" : ""}
+                <strong>
+                  {brief.sourceReadAt
+                    ? brief.assignments.length
+                    : "Your running list"}
+                </strong>
+                <small>
+                  {brief.sourceReadAt
+                    ? "highlighted items remaining"
+                    : "Read from Notion to choose today’s work"}
+                  {brief.sample ? " · sample" : ""}
+                </small>
               </span>
-            </div>
-            {brief.next ? (
-              <>
-                <h3>{brief.next.title}</h3>
-                <p>
-                  {clock(brief.next.start)}–{clock(brief.next.end)} ·{" "}
-                  {Date.parse(brief.next.start) <= Date.now()
-                    ? "Scheduled now"
-                    : "Upcoming"}
-                </p>
-                <p className={styles.muted}>
-                  Scheduled time is not a completion record.
-                </p>
-              </>
-            ) : (
+            </Link>
+            <Link href="/day" data-tone="green">
+              <span className={dashboard.minutes}>
+                {brief.homeworkProgress
+                  .filter((record) => record.sample === brief.sample)
+                  .reduce((total, record) => total + (record.minutes ?? 0), 0)}
+                <small>min</small>
+              </span>
+              <span>
+                <strong>Work recorded</strong>
+                <small>
+                  From your reviewed check-ins{brief.sample ? " · sample" : ""}
+                </small>
+              </span>
+            </Link>
+            <Link href="/day/preferences#calendar-connections" data-tone="blue">
+              <CalendarDays aria-hidden="true" size={21} />
+              <span>
+                <strong>{brief.events.length} saved events</strong>
+                <small>Calendar reads · refresh when changed</small>
+              </span>
+            </Link>
+          </nav>
+          {brief.plan && (
+            <DayNowPanel
+              plan={brief.plan}
+              approved={brief.approved}
+              sampleHomework={brief.sample}
+            />
+          )}
+          <div className={`${css.layout} ${dashboard.layout}`}>
+            <section className={`${styles.panel} ${dashboard.agenda}`}>
+              <div className={styles.sectionTitle}>
+                <h2>The shape of your day</h2>
+                <span>
+                  {brief.day}
+                  {brief.sample ? " · SAMPLE DATA" : ""}
+                </span>
+              </div>
               <p>
                 {brief.approved
-                  ? "No more scheduled activities today. Unfinished work still needs your check-in."
-                  : "Create or review today’s plan to see the next scheduled activity."}
+                  ? "Your approved schedule, with space for work and everything around it."
+                  : "Create or review today’s plan to put your choices on a timeline."}
               </p>
-            )}
-            <Link href="/day">Open the planner and conversation →</Link>
-            {brief.warnings.map((w) => (
-              <p role="alert" key={w} className={styles.error}>
-                {w}
-              </p>
-            ))}
-            {brief.plan && (
-              <>
-                <h3>Your approved timeline</h3>
-                <ol className={styles.timeline}>
-                  {brief.plan.entries.map((e) => (
-                    <li key={e.id} data-kind={e.kind}>
-                      <time>
-                        {clock(e.start)}
-                        <br />
-                        {clock(e.end)}
-                      </time>
-                      <div>
-                        <h3>{e.title}</h3>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-                {brief.plan.deferred.length > 0 && (
-                  <>
-                    <h3>Still needs room</h3>
-                    {brief.plan.deferred.map((d, i) => (
-                      <p key={i}>
-                        {d.title} — {d.reason}
-                      </p>
-                    ))}
-                  </>
-                )}
-              </>
-            )}
-          </section>
-          <aside className={css.sidebar}>
-            <NewsBriefingPanel />
-            <section className={styles.panel}>
-              <h2>Homework you chose</h2>
-              {brief.homeworkProgress.length > 0 && (
-                <p>
-                  {brief.homeworkProgress
-                    .filter((record) => record.sample === brief.sample)
-                    .reduce(
-                      (total, record) => total + (record.minutes ?? 0),
-                      0,
-                    )}{" "}
-                  actual homework minutes recorded today.{" "}
-                  <Link href="/day">Review work check-ins →</Link>
-                </p>
-              )}
-              <p className={styles.muted}>
-                {brief.sourceReadAt
-                  ? "Notion snapshot read " +
-                    new Date(brief.sourceReadAt).toLocaleString() +
-                    ". Refresh in the planner to check for changes."
-                  : "Load your running list in the planner first."}
-              </p>
-              {brief.assignments.map((a) => (
-                <p key={a.key}>
-                  {a.subject && <small>{a.subject} · </small>}
-                  {a.title}
+              <Link href="/day">Open the planner and conversation →</Link>
+              {brief.warnings.map((w) => (
+                <p role="alert" key={w} className={styles.error}>
+                  {w}
                 </p>
               ))}
-              {brief.sourceReadAt && !brief.assignments.length && (
-                <p>No unfinished highlighted items in this snapshot.</p>
+              {brief.plan && (
+                <>
+                  <h3>Your approved timeline</h3>
+                  <ol className={styles.timeline}>
+                    {brief.plan.entries.map((e) => (
+                      <li key={e.id} data-kind={e.kind}>
+                        <time>
+                          {clock(e.start)}
+                          <br />
+                          {clock(e.end)}
+                        </time>
+                        <div>
+                          <h3>{e.title}</h3>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                  {brief.plan.deferred.length > 0 && (
+                    <>
+                      <h3>Still needs room</h3>
+                      {brief.plan.deferred.map((d, i) => (
+                        <p key={i}>
+                          {d.title} — {d.reason}
+                        </p>
+                      ))}
+                    </>
+                  )}
+                </>
               )}
             </section>
-            <section className={styles.panel}>
-              <h2>Meals for today</h2>
-              {brief.meals ? (
-                Object.entries(brief.meals).map(([slot, title]) => (
-                  <p key={slot}>
-                    <strong>{slot}</strong> · {title || "Open choice"}
+            <aside className={`${css.sidebar} ${dashboard.spaces}`}>
+              <section
+                className={`${styles.panel} ${dashboard.card}`}
+                data-tone="amber"
+              >
+                <h2>
+                  <BookOpen size={19} aria-hidden="true" />
+                  Homework you chose
+                </h2>
+                {brief.homeworkProgress.length > 0 && (
+                  <p>
+                    {brief.homeworkProgress
+                      .filter((record) => record.sample === brief.sample)
+                      .reduce(
+                        (total, record) => total + (record.minutes ?? 0),
+                        0,
+                      )}{" "}
+                    actual homework minutes recorded today.{" "}
+                    <Link href="/day">Review work check-ins →</Link>
+                  </p>
+                )}
+                <p className={styles.muted}>
+                  {brief.sourceReadAt
+                    ? "Notion snapshot read " +
+                      new Date(brief.sourceReadAt).toLocaleString() +
+                      ". Refresh in the planner to check for changes."
+                    : "Load your running list in the planner first."}
+                </p>
+                {brief.assignments.map((a) => (
+                  <p key={a.key} className={dashboard.item}>
+                    {a.subject && <small>{a.subject} · </small>}
+                    {a.title}
+                  </p>
+                ))}
+                {brief.sourceReadAt && !brief.assignments.length && (
+                  <p>No unfinished highlighted items in this snapshot.</p>
+                )}
+              </section>
+              <section
+                className={`${styles.panel} ${dashboard.card}`}
+                data-tone="peach"
+              >
+                <h2>
+                  <Utensils size={19} aria-hidden="true" />
+                  Meals for today
+                </h2>
+                {brief.meals ? (
+                  Object.entries(brief.meals).map(([slot, title]) => (
+                    <p key={slot} className={dashboard.meal}>
+                      <strong>{slot}</strong>
+                      <span>{title || "Open choice"}</span>
+                    </p>
+                  ))
+                ) : (
+                  <p>No menu saved for today.</p>
+                )}
+                <Link href="/day/meals">
+                  Plan meals or open your food journal →
+                </Link>
+              </section>
+              <section
+                className={`${styles.panel} ${dashboard.card}`}
+                data-tone="green"
+              >
+                <h2>
+                  <Dumbbell size={19} aria-hidden="true" />
+                  Chosen training
+                </h2>
+                {brief.activities.length ? (
+                  brief.activities.map((a) => (
+                    <p key={a.id} className={dashboard.item}>
+                      {a.title} · {a.minutes} planned minutes
+                    </p>
+                  ))
+                ) : (
+                  <p>No training selected for this day plan.</p>
+                )}
+                <Link href="/day/fitness">Training & progress →</Link>
+              </section>
+              <section
+                className={`${styles.panel} ${dashboard.card}`}
+                data-tone="purple"
+              >
+                <h2>
+                  <GraduationCap size={19} aria-hidden="true" />
+                  SAT focus
+                </h2>
+                {brief.satReviews.map((review) => (
+                  <p className={dashboard.item} key={review.id}>
+                    {review.skill} · {review.minutes} planned minutes
+                  </p>
+                ))}
+                <p>
+                  Goal: {sat?.goal ?? "Not available"}
+                  {sat?.latest
+                    ? " · Latest full result: " + sat.latest.total
+                    : ""}
+                </p>
+                {sat?.focus[0] && (
+                  <p>
+                    Review queue: {sat.focus[0].topic} ·{" "}
+                    {sat.focus[0].unreviewed} unreviewed
+                  </p>
+                )}
+                {practice[0] && (
+                  <p>
+                    Practice to revisit: {practice[0].skill} (
+                    {practice[0].correct}/{practice[0].attempts} correct in the
+                    starter collection).
+                  </p>
+                )}
+                <Link href="/day/sat">Open question practice →</Link>
+              </section>
+              <NewsBriefingPanel />
+              <section className={`${styles.panel} ${dashboard.card}`}>
+                <h2>Daily readings</h2>
+                <p>
+                  Open the authorized source for Catholic readings for this
+                  date.
+                </p>
+                <a href={brief.readingUrl} target="_blank" rel="noreferrer">
+                  USCCB daily Mass readings ↗
+                </a>
+              </section>
+            </aside>
+            <section className={`${styles.panel} ${css.history}`}>
+              <h2>Your saved calendars</h2>
+              <p className={styles.muted}>
+                Saved reads, not continuous sync. Refresh connected calendars or
+                re-import files when events change.
+              </p>
+              {brief.events.length ? (
+                brief.events.map((e) => (
+                  <p key={e.id}>
+                    {e.start}–{e.end} · {e.title}
                   </p>
                 ))
               ) : (
-                <p>No menu saved for today.</p>
-              )}
-              <Link href="/day/meals">
-                Plan meals or open your food journal →
-              </Link>
-            </section>
-            <section className={styles.panel}>
-              <h2>Chosen training</h2>
-              {brief.activities.length ? (
-                brief.activities.map((a) => (
-                  <p key={a.id}>
-                    {a.title} · {a.minutes} planned minutes
-                  </p>
-                ))
-              ) : (
-                <p>No training selected for this day plan.</p>
-              )}
-              <Link href="/day/fitness">Training & progress →</Link>
-            </section>
-            <section className={styles.panel}>
-              <h2>SAT focus</h2>
-              <p>
-                Goal: {sat?.goal ?? "Not available"}
-                {sat?.latest
-                  ? " · Latest full result: " + sat.latest.total
-                  : ""}
-              </p>
-              {sat?.focus[0] && (
                 <p>
-                  Review queue: {sat.focus[0].topic} · {sat.focus[0].unreviewed}{" "}
-                  unreviewed
+                  No saved busy events available for today. This does not
+                  confirm you have no events.
                 </p>
               )}
-              {practice[0] && (
-                <p>
-                  Practice to revisit: {practice[0].skill} (
-                  {practice[0].correct}/{practice[0].attempts} correct in the
-                  starter collection).
-                </p>
-              )}
-              <Link href="/day/sat">Open question practice →</Link>
             </section>
-            <section className={styles.panel}>
-              <h2>Daily readings</h2>
-              <p>
-                Open the authorized source for Catholic readings for this date.
-              </p>
-              <a href={brief.readingUrl} target="_blank" rel="noreferrer">
-                USCCB daily Mass readings ↗
-              </a>
-            </section>
-          </aside>
-          <section className={`${styles.panel} ${css.history}`}>
-            <h2>Your saved calendars</h2>
-            <p className={styles.muted}>
-              Saved reads, not continuous sync. Refresh connected calendars or
-              re-import files when events change.
-            </p>
-            {brief.events.length ? (
-              brief.events.map((e) => (
-                <p key={e.id}>
-                  {e.start}–{e.end} · {e.title}
-                </p>
-              ))
-            ) : (
-              <p>
-                No saved busy events available for today. This does not confirm
-                you have no events.
-              </p>
-            )}
-          </section>
-        </div>
+          </div>
+        </>
       )}
     </main>
   );

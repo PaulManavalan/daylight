@@ -50,6 +50,10 @@ All-day and floating times can now resolve in an explicitly requested display ti
 
 The local preview's server-only encryption configuration was generated without adding Apple credentials; it is ignored by Git and is absent from the client static assets. An unauthenticated PROPFIND reached Apple's endpoint and returned 401. Real authorized account acceptance is still required. See [calendar integration setup and limits](calendar-integrations.md).
 
+## Today overview — November 24
+
+The Today overview now separates highlighted work remaining, actual reviewed homework minutes and saved calendar events. An unread running list is unknown rather than zero homework. The approved current/next panel is shared with the planner, and meals, training, selected SAT practice, news and readings use a responsive module grid. Browser checks cover desktop/mobile, reduced motion, unread-source wording and a two-hour clock advance without recording work; changed source revisions still remove the approved timeline.
+
 ## Hosted-model verification remains open
 
 The November 24 retry reused the same approved model and isolated profile. WebGPU was available, but the weight host again failed DNS resolution in Edge and a weight HEAD request timed out. Inference was not reached; no paid fallback or different model was enabled.

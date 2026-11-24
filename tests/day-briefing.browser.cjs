@@ -31,6 +31,11 @@ const { startBrowserServer } = require("./browser-server.cjs");
     await page.route("**/api/assistant", (r) =>
       r.fulfill({ json: { available: false, models: [] } }),
     );
+    await page.goto(server.url + "/day/briefing");
+    await page
+      .getByRole("navigation", { name: "Today's saved records" })
+      .getByRole("link", { name: /Your running list Read from Notion/ })
+      .waitFor();
     await page.goto(server.url + "/day");
     await page
       .getByRole("button", { name: "Try a sample list", exact: true })
@@ -59,6 +64,48 @@ const { startBrowserServer } = require("./browser-server.cjs");
       .getByRole("heading", { name: "Your approved timeline", exact: true })
       .waitFor();
     await page.getByText("2026-11-21 · SAMPLE DATA", { exact: true }).waitFor();
+    const overview = page.getByRole("navigation", {
+      name: "Today's saved records",
+    });
+    await overview.getByRole("link", { name: /0 min Work recorded/ }).waitFor();
+    const savedBeforeClock = await page.evaluate(() =>
+      localStorage.getItem("daylight.notion-day.v1.2026-11-21"),
+    );
+    await page.clock.fastForward(2 * 60 * 60 * 1000);
+    await page
+      .getByRole("complementary", { name: "Current schedule" })
+      .getByText("Scheduled now", { exact: true })
+      .waitFor();
+    assert.equal(
+      await page.evaluate(() =>
+        localStorage.getItem("daylight.notion-day.v1.2026-11-21"),
+      ),
+      savedBeforeClock,
+      "Viewing elapsed schedule must not record work",
+    );
+    await overview.getByRole("link", { name: /0 min Work recorded/ }).waitFor();
+    await page.setViewportSize({ width: 1440, height: 1050 });
+    const mealCard = await page
+      .getByRole("heading", { name: "Meals for today", exact: true })
+      .evaluate((node) => {
+        const section = node.closest("section");
+        return {
+          width: section.getBoundingClientRect().width,
+          clipped: section.scrollWidth > section.clientWidth,
+        };
+      });
+    assert.ok(
+      mealCard.width > 300,
+      "Desktop modules need enough width for readable content",
+    );
+    assert.equal(mealCard.clipped, false, "Module content must not be clipped");
+    await page.screenshot({
+      path: "artifacts/day-briefing-desktop.png",
+      fullPage: true,
+      animations: "disabled",
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
     assert.ok(
       (
         await page
@@ -75,6 +122,7 @@ const { startBrowserServer } = require("./browser-server.cjs");
     await page.screenshot({
       path: "artifacts/day-briefing-mobile.png",
       fullPage: true,
+      animations: "disabled",
     });
     await page.evaluate(() => {
       const key = "daylight.notion-day.v1.2026-11-21",

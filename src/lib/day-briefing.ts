@@ -4,12 +4,15 @@ import { fitnessActivitiesForDate } from "./fitness";
 import { dateKey } from "./scheduling";
 import type { PersonalWorkspace } from "./personal-workspace";
 import { homeworkProgressFor } from "./day-homework-progress";
+import { defaultSat, type SatState } from "./sat";
+import { satReviewsForDate } from "./sat-day-review";
 
 /** A read-only view of confirmed local records, not an AI summary or background job. */
 export function dayBriefing(
   raw: unknown,
   personal: PersonalWorkspace,
   now = new Date(),
+  sat: SatState | null = defaultSat(),
 ) {
   const day = dateKey(now),
     warnings: string[] = [];
@@ -18,6 +21,11 @@ export function dayBriefing(
   if (parsed && !parsed.success)
     warnings.push("The saved day needs recovery. It has not been changed.");
   const activities = fitnessActivitiesForDate(personal.fitness, day);
+  const satReviews = sat ? satReviewsForDate(sat, day) : [];
+  if (!sat)
+    warnings.push(
+      "SAT planning records need recovery before the timetable can be confirmed.",
+    );
   let events: ReturnType<typeof calendarBusyToday> = [];
   try {
     events = calendarBusyToday(personal.calendars, now);
@@ -28,7 +36,8 @@ export function dayBriefing(
     !!saved &&
     (saved.calendarRevision ?? JSON.stringify(emptyCalendars())) ===
       JSON.stringify(personal.calendars) &&
-    (saved.activityRevision ?? "[]") === JSON.stringify(activities);
+    (saved.activityRevision ?? "[]") === JSON.stringify(activities) &&
+    (saved.satReviewRevision ?? "[]") === JSON.stringify(satReviews);
   const approved =
     !!saved?.approved &&
     saved.plan?.day === day &&
@@ -36,7 +45,7 @@ export function dayBriefing(
     warnings.length === 0;
   if (saved?.plan && !revisionsMatch)
     warnings.push(
-      "Your calendars or chosen training changed. Review a fresh day plan.",
+      "Your calendars, chosen training or SAT practice changed. Review a fresh day plan.",
     );
   const plan = approved ? saved!.plan : null;
   const upcoming =
@@ -56,6 +65,7 @@ export function dayBriefing(
     next,
     events,
     activities,
+    satReviews,
     meals,
     warnings,
     sample: saved?.sample ?? false,

@@ -439,6 +439,24 @@ function ownerFrom(request) {
     assert.ok(
       await two.page.getByText("seconds per attempt", { exact: false }).count(),
     );
+    await one.page.getByText("Choose practice time", { exact: true }).click();
+    await one.page
+      .getByLabel("SAT practice date", { exact: true })
+      .fill("2026-11-21");
+    await one.page
+      .getByLabel("Planned SAT minutes", { exact: true })
+      .fill("20");
+    await one.page
+      .getByRole("button", { name: "Review adding SAT practice", exact: true })
+      .click();
+    await one.page
+      .getByRole("button", { name: "Save reviewed SAT time", exact: true })
+      .click();
+    await waitForDocument(
+      A + ":sat",
+      (row) => row?.payload.reviewPlans?.length === 1,
+    );
+    assert.equal(documents.get(A + ":sat").payload.attempts.length, 1);
     await one.page.goto(server.url + "/day");
     await one.page
       .getByRole("button", { name: "Try a sample list", exact: true })
@@ -471,6 +489,11 @@ function ownerFrom(request) {
       (row) => row?.payload.approved === true,
     );
     assert.equal(documents.get(A + ":day:2026-11-21").payload.approved, true);
+    assert.ok(
+      documents
+        .get(A + ":day:2026-11-21")
+        .payload.plan.entries.some((entry) => entry.satReviewId),
+    );
     await two.page.goto(server.url + "/day/briefing");
     await two.page.reload();
     await two.page

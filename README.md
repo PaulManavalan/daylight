@@ -146,6 +146,8 @@ After a restore, **Backups → Download previous workspace** exports the saved r
 
 ### SAT workspace
 
+The focused `/day/sat` studio also supports reviewed practice-time choices for a day, skill and duration. These join Notion homework in `/day` within the same focus allowance, around protected events. Changing a choice requires a fresh timetable review. Planned or elapsed practice never creates an answer attempt or work record. The account-document layer carries these choices across signed-in focused screens; real configured-account acceptance remains a launch gate. The home dashboard's module cards show saved selections and distinguish samples or imported snapshots from live connections.
+
 **SAT practice** stores your confirmed target (initially 1550), optional confirmed next-test date, separate Math and Reading & Writing results, and a topic-based error log. Practice and official SAT results remain labeled separately. The review queue groups logged mistakes without treating their frequency as a diagnostic score or reviewed entries as mastered skills. Choose a topic and duration to add a real SAT review task through the existing protected-time scheduler. The assistant receives a compact SAT summary when discussing your plans.
 
 SAT records stay separate per local/account workspace in this browser and are included in exports. Older version-1 task/calendar backups preserve existing SAT records when no SAT section exists; an explicit null SAT section clears them after review. Bluebook and Khan Academy links open official College Board resources; automatic result import, cross-device sync, and a validated question-generation curriculum are not implemented. Run `node tests/sat-browser.cjs` after a build for the complete synthetic-data workflow.

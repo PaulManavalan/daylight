@@ -124,6 +124,7 @@ export function notionDayConversationMessages(
     source: context.source,
     externalCalendarEvents: context.externalCalendarEvents,
     selectedTrainingActivities: context.selectedTrainingActivities,
+    selectedSatReviews: context.selectedSatReviews,
     plannedMealsToday: context.plannedMealsToday,
     preferences: context.preferences,
     existingPlan:
@@ -145,6 +146,7 @@ export function notionDayConversationMessages(
         JSON.stringify(facts) +
         "\n" +
         "selectedTrainingActivities are flexible sessions explicitly chosen by the user in the training module. The scheduling engine already includes them. Do not duplicate them in extras or events, alter their durations, prescribe sets/loads/paces, or infer that they are complete. Discuss other commitments and available time; team practices with fixed times remain protected calendar events. Use confirmed logged outcomes only, and do not diagnose injury or recommend training through pain.\n" +
+        "selectedSatReviews are practice time already chosen in SAT. The scheduler includes them within the shared focus allowance. Do not duplicate them in extras, change their chosen durations, infer completion or claim answers were recorded.\n" +
         "homeworkProgress contains explicitly saved local reports. A complete report applies in Daylight only, not Notion; worked or set_aside does not mean complete. Actual minutes and additional focus minutes are different. Never claim a new work report has been saved before its review is approved.\n" +
         athleteNutritionGuidance +
         "\nproposedHomeworkCheckin is UNSAVED. When present, ask the user to review its card; do not claim it was recorded. If the user reported work but no usable proposal is present, clarify the homework identity or missing facts naturally. This reply stage returns only the reply string, never a check-in object.",
@@ -404,6 +406,7 @@ export function notionDayMessages(request: BrainRequest, compact = false) {
         "homeworkProgress contains only explicitly saved local reports. Complete means reported complete in Daylight, not written back to Notion. Worked and set_aside do not establish assignment completion. Recorded minutes are actual work; remainingMinutes is extra focus wanted today, not actual time already spent. Do not infer completion from elapsed timetable slots or overwrite these records through dailyContext.",
         athleteNutritionGuidance,
         'For an explicit report about homework, return homeworkCheckin with one existing sourceKey, outcome worked/complete/set_aside/more_time, minutes actually worked or null when unknown, remainingMinutes explicitly wanted TODAY or null, and note copied from the user. A work report must leave dailyContext unchanged until its review is approved. "I spent 20 minutes on chapter 4 and need 10 more" means worked, minutes 20, remainingMinutes 10; it does not mean complete. "I finished chapter 4" means complete, minutes null, remainingMinutes null. A request for more focus time without a work report uses outcome more_time, minutes null and an explicit positive remainingMinutes. Never use a timetable duration as actual work. For questions, hypotheticals, open conversation, unsupported subjects or ambiguous identity, use homeworkCheckin:null and clarify naturally. A correction to pendingHomeworkCheckin revises that unsaved proposal; it does not add another record. Never propose work records for workouts, news or meals in this homework-only action.',
+        "selectedSatReviews are explicit choices made in the SAT module and are already included by the scheduler within the same focus allowance as homework. Do not copy them into extras or events, change their requested durations or infer completed practice. The user can review these choices in SAT.",
         "CURRENT DATA: " + encoded,
       ].join("\n"),
     },

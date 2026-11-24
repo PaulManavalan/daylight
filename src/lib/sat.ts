@@ -1,4 +1,5 @@
 import { practiceAttemptSchema } from "./sat-practice";
+import { satDayReviewSchema } from "./sat-day-review";
 import { z } from "zod";
 import { taskInputSchema, type TaskInput } from "./types";
 export const satSectionSchema = z.enum(["math", "reading_writing"]);
@@ -32,6 +33,7 @@ export const satStateSchema = z
     scores: z.array(satScoreSchema).max(200),
     errors: z.array(satErrorSchema).max(1000),
     attempts: z.array(practiceAttemptSchema).max(3000).default([]),
+    reviewPlans: z.array(satDayReviewSchema).max(365).default([]),
   })
   .refine(
     (s) =>
@@ -42,6 +44,12 @@ export const satStateSchema = z
   .refine(
     (s) => new Set(s.attempts.map((a) => a.id)).size === s.attempts.length,
     "Practice attempt IDs must be unique.",
+  )
+  .refine(
+    (s) =>
+      new Set(s.reviewPlans.map((review) => review.id)).size ===
+      s.reviewPlans.length,
+    "Practice plan IDs must be unique.",
   );
 export type SatState = z.infer<typeof satStateSchema>;
 export const satKey = (owner: string) => "daylight.sat.v1." + owner;
@@ -52,6 +60,7 @@ export const defaultSat = (): SatState => ({
   scores: [],
   errors: [],
   attempts: [],
+  reviewPlans: [],
 });
 interface SatStorage {
   getItem(key: string): string | null;

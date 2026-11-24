@@ -19,9 +19,11 @@ const kind = {
 export default function DayNowPanel({
   plan,
   approved,
+  sampleHomework = false,
 }: {
   plan: NotionDayPlan;
   approved: boolean;
+  sampleHomework?: boolean;
 }) {
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
@@ -47,6 +49,9 @@ export default function DayNowPanel({
   return (
     <aside className={styles.panel} aria-label="Current schedule">
       <div className={styles.current}>
+        {sampleHomework && (
+          <p className={styles.label}>Includes sample homework</p>
+        )}
         <span className={styles.label}>
           {state.active.length
             ? "Scheduled now"
@@ -58,7 +63,8 @@ export default function DayNowPanel({
           <div key={entry.id} className={styles.block}>
             <h3>{entry.title}</h3>
             <p>
-              {kind[entry.kind]} · {clock(entry.start)}–{clock(entry.end)}
+              {entry.satReviewId ? "SAT practice" : kind[entry.kind]} ·{" "}
+              {clock(entry.start)}–{clock(entry.end)}
             </p>
           </div>
         ))}
@@ -83,7 +89,8 @@ export default function DayNowPanel({
           </span>
           <h3>{state.next.title}</h3>
           <p>
-            {kind[state.next.kind]} · until {clock(state.next.end)}
+            {state.next.satReviewId ? "SAT practice" : kind[state.next.kind]} ·
+            until {clock(state.next.end)}
           </p>
         </div>
       )}

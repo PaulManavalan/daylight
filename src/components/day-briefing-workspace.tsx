@@ -41,7 +41,6 @@ export default function DayBriefingWorkspace() {
       } catch {
         data = {};
       }
-      setBrief(dayBriefing(data, personal, now));
       setUpdated(
         now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
       );
@@ -55,9 +54,11 @@ export default function DayBriefingWorkspace() {
           : new SatStore(localStorage, "local-demo").load().state;
         setSat(satSummary(state));
         setPractice(practiceSummary(state.attempts));
+        setBrief(dayBriefing(data, personal, now, state));
       } catch {
         setSat(null);
         setPractice([]);
+        setBrief(dayBriefing(data, personal, now, null));
         setError(
           "SAT records need recovery. Other available records are shown.",
         );

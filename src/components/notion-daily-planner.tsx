@@ -38,6 +38,10 @@ import { refreshDaySource, daySourceContext } from "@/lib/day-source-refresh";
 import DayHomeworkCheckin from "./day-homework-checkin";
 import HomeworkProposalCard from "./homework-proposal-card";
 import DayNowPanel from "./day-now-panel";
+import DayAppDeck from "./day-app-deck";
+import { useSatReviews } from "./use-sat-reviews";
+import { satReviewsForDate } from "@/lib/sat-day-review";
+import { SatStore, satStateSchema, defaultSat } from "@/lib/sat";
 import { chatDecision, wantsOpenChat } from "@/lib/chat-actions";
 import { isHomeworkWorkReport } from "@/lib/day-homework-model";
 import {
@@ -95,7 +99,8 @@ export default function NotionDailyPlanner() {
   const brain = useAssistantBrain(
       owner === "local-demo" ? "notion-day-v1" : "notion-day-v1." + owner,
     ),
-    personal = usePersonalWorkspace();
+    personal = usePersonalWorkspace(),
+    sat = useSatReviews();
   const [source, setSource] = useState<RunningListSource | null>(null),
     [sample, setSample] = useState(false),
     [known, setKnown] = useState<NotionDayContext>(emptyNotionDay),
@@ -121,7 +126,8 @@ export default function NotionDailyPlanner() {
     requestActive = useRef(false),
     savedVersion = useRef<string | null>(null),
     planCalendar = useRef(JSON.stringify(emptyCalendars())),
-    planActivities = useRef("[]");
+    planActivities = useRef("[]"),
+    planSatReviews = useRef("[]");
   const savedSequence = useRef(0),
     workActive = useRef(false),
     pendingWorkEdits = useRef<{
@@ -155,6 +161,7 @@ export default function NotionDailyPlanner() {
         planCalendar.current =
           saved.calendarRevision ?? JSON.stringify(emptyCalendars());
         planActivities.current = saved.activityRevision ?? "[]";
+        planSatReviews.current = saved.satReviewRevision ?? "[]";
       }
     } catch {
       setError(
@@ -217,6 +224,23 @@ export default function NotionDailyPlanner() {
     nextHomeworkProgress: HomeworkWorkRecord[] = homeworkProgress,
     nextPendingHomeworkCheckin: PendingHomeworkCheckin | null = pendingHomeworkCheckin,
   ) {
+    if (!personal.state || personal.error)
+      throw Error(
+        personal.error || "Personal settings are still loading. Try again.",
+      );
+    if (!sat.state || sat.error)
+      throw Error(
+        sat.error || "SAT planning choices are still loading. Try again.",
+      );
+    const currentSat = account
+      ? satStateSchema.parse(account.document("sat").payload ?? defaultSat())
+      : new SatStore(localStorage, "local-demo").load().state;
+    if (
+      JSON.stringify(satReviewsForDate(currentSat, day)) !== satReviewRevision
+    )
+      throw Error(
+        "SAT practice choices changed. Review a fresh day plan before saving.",
+      );
     if (!account && localStorage.getItem(RESTORE_PENDING) !== null)
       throw new Error(
         "Finish the interrupted workspace restore before saving this day.",
@@ -233,6 +257,7 @@ export default function NotionDailyPlanner() {
       homeworkProgress: nextHomeworkProgress,
       pendingHomeworkCheckin: nextPendingHomeworkCheckin,
       activityRevision,
+      satReviewRevision,
       calendarRevision: JSON.stringify(
         personal.state?.calendars ?? emptyCalendars(),
       ),
@@ -338,7 +363,8 @@ export default function NotionDailyPlanner() {
         const refreshed = refreshDaySource(source, next, known, plan, approved);
         const stale =
           planCalendar.current !== calendarRevision ||
-          planActivities.current !== activityRevision;
+          planActivities.current !== activityRevision ||
+          planSatReviews.current !== satReviewRevision;
         let nextPlan = stale ? null : refreshed.plan;
         const nextApproved = stale ? false : refreshed.approved;
         const pendingItem = source.items.find(
@@ -369,6 +395,7 @@ export default function NotionDailyPlanner() {
               personal.state.calendars,
               personal.state.fitness,
               homeworkProgress,
+              selectedSatReviews,
             );
           } catch (e) {
             reason =
@@ -390,6 +417,7 @@ export default function NotionDailyPlanner() {
         if (refreshed.changed || stale) {
           planCalendar.current = calendarRevision;
           planActivities.current = activityRevision;
+          planSatReviews.current = satReviewRevision;
         }
         setSource(next);
         setSample(false);
@@ -424,29 +452,45 @@ export default function NotionDailyPlanner() {
     [personal.state?.fitness, day],
   );
   const activityRevision = JSON.stringify(selectedActivities);
+  const selectedSatReviews =
+    sat.state && day ? satReviewsForDate(sat.state, day) : [];
+  const satReviewRevision = JSON.stringify(selectedSatReviews);
   useEffect(() => {
     if (
       personal.state &&
+      sat.state &&
       plan &&
       (planCalendar.current !== calendarRevision ||
-        planActivities.current !== activityRevision)
+        planActivities.current !== activityRevision ||
+        planSatReviews.current !== satReviewRevision)
     ) {
       setPlan(null);
       setApproved(false);
       setError(
         planCalendar.current !== calendarRevision
           ? "Your calendars changed. Your conversation is kept; ask for a fresh day plan before saving or exporting."
-          : "Your selected training activities changed. Your conversation is kept; create a fresh day plan before saving or exporting.",
+          : planActivities.current !== activityRevision
+            ? "Your selected training activities changed. Your conversation is kept; create a fresh day plan before saving or exporting."
+            : "Your selected SAT practice changed. Your conversation is kept; create a fresh day plan before saving or exporting.",
       );
     }
-  }, [calendarRevision, activityRevision, personal.state, plan]);
+  }, [
+    calendarRevision,
+    activityRevision,
+    satReviewRevision,
+    personal.state,
+    sat.state,
+    plan,
+  ]);
   function downloadCalendar(includeTraining = false) {
-    if (workActive.current || busy || savingDay) return;
+    if (workActive.current || busy || savingDay || !sat.state || sat.error)
+      return;
     if (
       !plan ||
       !approved ||
       planCalendar.current !== calendarRevision ||
-      planActivities.current !== activityRevision
+      planActivities.current !== activityRevision ||
+      planSatReviews.current !== satReviewRevision
     )
       return;
     const content = exportDayCalendar(plan, includeTraining),
@@ -590,6 +634,7 @@ export default function NotionDailyPlanner() {
                 }
               : null,
             selectedTrainingActivities: selectedActivities,
+            selectedSatReviews,
             plannedMealsToday:
               personal.state.nutrition.plans
                 .flatMap((plan) => plan.days)
@@ -636,6 +681,7 @@ export default function NotionDailyPlanner() {
             personal.state.calendars,
             personal.state.fitness,
             homeworkProgress,
+            selectedSatReviews,
           );
         } catch (e) {
           planningError =
@@ -654,6 +700,7 @@ export default function NotionDailyPlanner() {
       if (updatePlan) {
         planCalendar.current = calendarRevision;
         planActivities.current = activityRevision;
+        planSatReviews.current = satReviewRevision;
       }
       setPlan(nextPlan);
       setApproved(nextApproved);
@@ -690,7 +737,8 @@ export default function NotionDailyPlanner() {
     try {
       if (
         planCalendar.current !== calendarRevision ||
-        planActivities.current !== activityRevision
+        planActivities.current !== activityRevision ||
+        planSatReviews.current !== satReviewRevision
       )
         throw new Error(
           "Your calendars or selected training changed. Make a fresh draft first.",
@@ -716,10 +764,12 @@ export default function NotionDailyPlanner() {
         personal.state.calendars,
         personal.state.fitness,
         homeworkProgress,
+        selectedSatReviews,
       );
       setKnown(nextKnown);
       planCalendar.current = calendarRevision;
       planActivities.current = activityRevision;
+      planSatReviews.current = satReviewRevision;
       setPlan(nextPlan);
       setApproved(false);
       setError("");
@@ -778,6 +828,7 @@ export default function NotionDailyPlanner() {
             personal.state.calendars,
             personal.state.fitness,
             records,
+            selectedSatReviews,
           );
         } catch (error) {
           planningError =
@@ -803,6 +854,7 @@ export default function NotionDailyPlanner() {
       setApproved(false);
       planCalendar.current = calendarRevision;
       planActivities.current = activityRevision;
+      planSatReviews.current = satReviewRevision;
       setSourceNotice(
         freshPlan
           ? "Your work record is saved. Review the new draft for the rest of today."
@@ -917,6 +969,16 @@ export default function NotionDailyPlanner() {
     source?.items.filter(
       (item) => item.yellowHighlighted && item.completion !== "checked",
     ) ?? [];
+  const currentPlanApproved =
+    approved &&
+    !!plan &&
+    !!personal.state &&
+    !personal.error &&
+    !!sat.state &&
+    !sat.error &&
+    planCalendar.current === calendarRevision &&
+    planActivities.current === activityRevision &&
+    planSatReviews.current === satReviewRevision;
   return (
     <main className={styles.page}>
       <header className={styles.header}>
@@ -936,15 +998,25 @@ export default function NotionDailyPlanner() {
       <section className={styles.intro}>
         <p className={styles.eyebrow}>YOUR LIST. YOUR DAY.</p>
         <h1>
-          A little structure.
+          {currentPlanApproved ? "Your day," : "A little structure."}
           <br />
-          <em>Room for real life.</em>
+          <em>
+            {currentPlanApproved ? "at a glance." : "Room for real life."}
+          </em>
         </h1>
         <p>
-          Your Notion list is the starting point. Talk through today, then make
-          a plan you can actually use.
+          {currentPlanApproved
+            ? "Your approved schedule and the plans you've chosen for today. Talk it through whenever things change."
+            : "Your Notion list is the starting point. Talk through today, then make a plan you can actually use."}
         </p>
       </section>
+      {plan && (
+        <DayNowPanel
+          plan={plan}
+          approved={currentPlanApproved}
+          sampleHomework={sample}
+        />
+      )}
       {personal.state && (
         <details className={styles.connections}>
           <summary>
@@ -958,13 +1030,27 @@ export default function NotionDailyPlanner() {
           />
         </details>
       )}
+      {sat.error && (
+        <p role="alert" className={styles.error}>
+          {sat.error}
+        </p>
+      )}
       {personal.error && (
         <p role="alert" className={styles.error}>
           {personal.error}
         </p>
       )}
+      <DayAppDeck
+        source={source}
+        sample={sample}
+        personal={personal.error ? null : personal.state}
+        satReviews={sat.state ? selectedSatReviews : null}
+        day={day}
+        recordStatus={personal.error ? "Needs recovery" : "Loading…"}
+        satStatus={sat.error ? "Needs recovery" : "Loading…"}
+      />
       <div className={styles.layout}>
-        <aside className={styles.panel}>
+        <aside className={styles.panel} id="running-list">
           <div className={styles.sectionTitle}>
             <h2>Your running list</h2>
             {source && <span>{sample ? "Sample" : "Notion read"}</span>}
@@ -1271,14 +1357,6 @@ export default function NotionDailyPlanner() {
           </p>
         ) : (
           <>
-            <DayNowPanel
-              plan={plan}
-              approved={
-                approved &&
-                planCalendar.current === calendarRevision &&
-                planActivities.current === activityRevision
-              }
-            />
             <p>
               Available window: {plan.window}.{" "}
               {sample ? "This plan uses sample homework. " : ""}Nothing is
@@ -1308,7 +1386,9 @@ export default function NotionDailyPlanner() {
                   <div>
                     <small>
                       {entry.kind === "study"
-                        ? "Focus"
+                        ? entry.satReviewId
+                          ? "SAT practice"
+                          : "Focus"
                         : entry.kind === "activity"
                           ? "Training · your chosen activity"
                           : entry.kind === "fixed"

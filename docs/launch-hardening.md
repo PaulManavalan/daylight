@@ -32,6 +32,16 @@ Browser scenarios verify refresh without a discard dialog, saved-ID reuse after 
 
 Conversational reports now stage an editable review before recording actual work, completion, setting work aside or requesting more focus. Saving produces a fresh timetable draft and never writes to Notion. Unknown actual time stays unknown. Stale reviews, backup restores, midnight and storage failure are covered; see [homework-progress.md](homework-progress.md). Installed-model testing exposed both completion abstention and false hypothetical completion claims. Exact unique-title recovery and a bounded reply repair address the reproduced cases; broad model reliability remains unverified.
 
+## Connected-day display and SAT scheduling — November 24
+
+Reviewed SAT date/skill/duration choices now feed the focused daily scheduler and share the homework focus allowance. Cross-tab changes and differing account revisions invalidate prior timetable approval; the Today overview applies the same check. Existing SAT backups gain an empty planning list and keep their recorded attempts. A chosen or elapsed session never becomes an answered question or actual-work report. Matching conversational read-back is not scheduled twice.
+
+The visual pass adds module-specific accents, cards with saved record counts and source labels, a decorative horizon, clearer panels and subtle motion with a reduced-motion alternative. Current/next scheduling appears near the top of an approved day, with sample homework explicitly marked. Desktop/mobile checks cover card navigation, source wording, SAT review/cancel/remove, shared capacity and unchanged actual records. The real Supabase SDK with a synthetic backend verifies SAT choices inside a second-device daily plan and distinct-account isolation; real account/provider acceptance remains unverified.
+
+Verification: 308 unit tests and the production build pass. Browser regressions pass for focused SAT scheduling and question practice, training routines and logs, meals, news, backups and current/next clock boundaries. The account test always restores the normal build after its isolated synthetic Supabase configuration; that test hostname is absent from the final static assets.
+
+On November 24, the local status endpoints reported `configured:false` for both Notion and Google OAuth in a request without browser cookies. This establishes missing configuration in that local runtime, not the state of production credentials or the user's personal account authorization. Daylight's own OAuth setup is separate from a development-chat connector. No paid service was enabled.
+
 ## Hosted-model verification remains open
 
 The November 22 real WebGPU retry found a usable GPU and successfully reached the approved Qwen model's configuration and runtime hosts. The weight redirect host `us.aws.cdn.hf.co` failed DNS resolution in Edge and timed out in a separate Node HEAD check. Actual browser inference was not reached. `tests/browser-day-model-live.cjs` reproduces the focused flow with local AI blocked, synthetic records and the existing isolated profile; its explicit download opt-in is still required. This evidence is a failed asset-delivery test, not proof that hosted chat works or that every user's network will fail. No different model or paid fallback was enabled.

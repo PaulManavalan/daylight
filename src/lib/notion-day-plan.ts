@@ -15,6 +15,11 @@ import {
 import type { RunningListSource } from "./notion-daily-source";
 import type { Task } from "./types";
 import {
+  satDayReviewSchema,
+  satReviewTitle,
+  type SatDayReview,
+} from "./sat-day-review";
+import {
   homeworkProgressFor,
   homeworkProgressSchema,
   type HomeworkWorkRecord,
@@ -45,6 +50,7 @@ export const notionDayPlanSchema = z.object({
       kind: z.enum(["study", "activity", "fixed", "recovery", "break"]),
       sourceKey: z.string().nullable(),
       activityId: z.string().nullable().optional(),
+      satReviewId: z.uuid().nullable().optional(),
     }),
   ),
   deferred: z.array(z.object({ title: z.string(), reason: z.string() })),
@@ -67,6 +73,7 @@ export function buildNotionDayPlan(
   calendars: CalendarSnapshot = emptyCalendars(),
   fitness: FitnessState = emptyFitness(),
   homeworkProgress: HomeworkWorkRecord[] = [],
+  satReviewPlans: SatDayReview[] = [],
 ): NotionDayPlan {
   const context = notionDayContextSchema.parse(raw);
   if (!dayIsReady(context))
@@ -254,7 +261,47 @@ export function buildNotionDayPlan(
     for (const warning of calendar.warnings)
       assumptions.push(calendar.id + ": " + warning);
   const titles = new Set(tasks.map((task) => task.title.trim().toLowerCase()));
+  const satReviews = z
+    .array(satDayReviewSchema)
+    .max(365)
+    .parse(satReviewPlans)
+    .filter((review) => review.date === dateKey(now));
+  if (new Set(satReviews.map((review) => review.id)).size !== satReviews.length)
+    throw Error("SAT practice identities must be unique.");
+  for (const review of satReviews) {
+    const title = satReviewTitle(review);
+    tasks.push({
+      id: "sat-review:" + review.id,
+      title,
+      subject: "SAT",
+      description:
+        "Practice time explicitly selected by the user, not completed work.",
+      deadline: null,
+      estimated_minutes: review.minutes,
+      remaining_minutes: review.minutes,
+      priority: "medium",
+      energy_level: "medium",
+      status: "not_started",
+      user_id: "notion-day-proposal",
+      actual_minutes: 0,
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+    });
+    titles.add(title.toLowerCase());
+  }
+  if (satReviews.length)
+    assumptions.push(
+      `${satReviews.reduce((sum, review) => sum + review.minutes, 0)} minutes of explicitly selected SAT practice share today's focus allowance with homework. Selected time and elapsed blocks do not record answers or completed work.`,
+    );
   for (const [index, extra] of context.extras.entries()) {
+    if (
+      satReviews.length &&
+      /^(?:sat|sat practice|sat review)$/i.test(extra.title.trim()) &&
+      (extra.minutes === null ||
+        extra.minutes ===
+          satReviews.reduce((sum, review) => sum + review.minutes, 0))
+    )
+      continue;
     if (activityNames.has(extra.title.trim().toLowerCase())) continue;
     if (titles.has(extra.title.trim().toLowerCase())) continue;
     titles.add(extra.title.trim().toLowerCase());
@@ -311,6 +358,9 @@ export function buildNotionDayPlan(
     kind: entry.taskId?.startsWith("fitness:") ? "activity" : entry.kind,
     activityId: entry.taskId?.startsWith("fitness:")
       ? entry.taskId.slice(8)
+      : null,
+    satReviewId: entry.taskId?.startsWith("sat-review:")
+      ? entry.taskId.slice(11)
       : null,
     sourceKey: entry.taskId?.startsWith("notion:")
       ? entry.taskId.slice(7)

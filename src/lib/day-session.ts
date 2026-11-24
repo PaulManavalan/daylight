@@ -24,4 +24,5 @@ export const savedDaySessionSchema = z.object({
   pendingHomeworkCheckin: pendingHomeworkCheckinSchema.nullable().default(null),
   calendarRevision: z.string().optional(),
   activityRevision: z.string().optional(),
+  satReviewRevision: z.string().optional(),
 });

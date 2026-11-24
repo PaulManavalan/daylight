@@ -20,6 +20,7 @@ import {
 import { dateKey } from "@/lib/scheduling";
 import styles from "./notion-daily-planner.module.css";
 import css from "./sat-practice-workspace.module.css";
+import SatDayReviewPlanner from "./sat-day-review-planner";
 
 export default function SatPracticeWorkspace() {
   const { account } = useAccountWorkspace();
@@ -217,6 +218,7 @@ export default function SatPracticeWorkspace() {
         </p>
       )}
       {notice && <p role="status">{notice}</p>}
+      {loaded && <SatDayReviewPlanner state={loaded.state} onSave={save} />}
       {!loaded ? (
         <p>
           Your saved records are kept intact.{" "}

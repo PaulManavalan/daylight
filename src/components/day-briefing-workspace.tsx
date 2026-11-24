@@ -279,10 +279,10 @@ export default function DayBriefingWorkspace() {
             </section>
           </aside>
           <section className={`${styles.panel} ${css.history}`}>
-            <h2>Your imported calendars</h2>
+            <h2>Your saved calendars</h2>
             <p className={styles.muted}>
-              Saved file snapshots, not live account sync. Refresh imports in
-              Preferences when events change.
+              Saved reads, not continuous sync. Refresh connected calendars or
+              re-import files when events change.
             </p>
             {brief.events.length ? (
               brief.events.map((e) => (
@@ -292,8 +292,8 @@ export default function DayBriefingWorkspace() {
               ))
             ) : (
               <p>
-                No imported busy events available for today. This does not
-                confirm you have no events.
+                No saved busy events available for today. This does not confirm
+                you have no events.
               </p>
             )}
           </section>

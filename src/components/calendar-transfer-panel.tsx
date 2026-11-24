@@ -103,7 +103,7 @@ export default function CalendarTransferPanel({
       {state.calendars.calendars.map((calendar) => (
         <div key={calendar.id} className={styles.calendarRow}>
           <div>
-            <strong>{calendar.id}</strong>
+            <strong>{calendar.title ?? calendar.id}</strong>
             <p className={styles.muted}>
               {calendar.provider === "google"
                 ? "Google"
@@ -117,7 +117,10 @@ export default function CalendarTransferPanel({
               Covers {new Date(calendar.rangeStart).toLocaleDateString()}{" "}
               through{" "}
               {new Date(Date.parse(calendar.rangeEnd) - 1).toLocaleDateString()}
-              . Source edits need a new import.
+              .{" "}
+              {calendar.source === "google" || calendar.source === "icloud"
+                ? "Refresh this saved read when source events change."
+                : "Source edits need a new import."}
             </p>
           </div>
           <button
@@ -125,7 +128,7 @@ export default function CalendarTransferPanel({
             disabled={disabled}
             onClick={() => remove(calendar.id)}
           >
-            Remove {calendar.id}
+            Remove {calendar.title ?? calendar.id}
           </button>
         </div>
       ))}

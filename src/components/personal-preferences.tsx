@@ -12,6 +12,7 @@ import { mealSlots } from "@/lib/nutrition";
 import { WorkspaceBackupControl } from "./workspace-backup";
 import { exportLocalWorkspace } from "@/lib/workspace-backup";
 import GoogleCalendarPanel from "./google-calendar-panel";
+import ICloudCalendarPanel from "./icloud-calendar-panel";
 import { useAccountWorkspace } from "./account-workspace-context";
 import AccountSyncPanel from "./account-sync-panel";
 const lines = (text: string) => [
@@ -25,6 +26,16 @@ const lines = (text: string) => [
 export default function PersonalPreferences() {
   const { account, owner } = useAccountWorkspace();
   const workspace = usePersonalWorkspace();
+  const workspaceReady = !!workspace.state;
+  useEffect(() => {
+    if (
+      workspaceReady &&
+      ["#icloud-calendar", "#calendar-connections"].includes(location.hash)
+    )
+      document
+        .getElementById(location.hash.slice(1))
+        ?.scrollIntoView({ block: "start" });
+  }, [workspaceReady]);
   const [draft, setDraft] = useState<PersonalWorkspace | null>(null),
     [knownProfile, setKnownProfile] = useState<Pick<
       PersonalWorkspace,
@@ -382,11 +393,18 @@ export default function PersonalPreferences() {
         {message && <p role="status">{message}</p>}
       </section>
       {workspace.state && (
-        <GoogleCalendarPanel
-          state={workspace.state}
-          save={workspace.save}
-          disabled={!!workspace.error}
-        />
+        <div id="calendar-connections">
+          <GoogleCalendarPanel
+            state={workspace.state}
+            save={workspace.save}
+            disabled={!!workspace.error}
+          />
+          <ICloudCalendarPanel
+            state={workspace.state}
+            save={workspace.save}
+            disabled={!!workspace.error}
+          />
+        </div>
       )}
       <AccountSyncPanel />
       {!account && (

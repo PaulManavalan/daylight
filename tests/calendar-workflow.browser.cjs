@@ -64,7 +64,7 @@ const ics = (uid, title, start, end) =>
     });
     await page.goto(server.url + "/day");
     await page
-      .getByText("Calendars · 0 imported · file transfer options", {
+      .getByText("Calendars · 0 saved sources", {
         exact: true,
       })
       .click();

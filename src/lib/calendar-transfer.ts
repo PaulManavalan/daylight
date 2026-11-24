@@ -2,6 +2,7 @@ import ICAL from "ical.js";
 import { z } from "zod";
 import { addDays, dateKey, dayAt, type FixedBlock } from "./scheduling";
 import type { NotionDayPlan } from "./notion-day-plan";
+import { calendarInstant } from "./calendar-timezone";
 
 export const calendarEventSchema = z
   .object({
@@ -27,6 +28,8 @@ export const calendarSnapshotSchema = z.object({
       z.object({
         id: z.string().min(1).max(80),
         provider: z.enum(["google", "apple", "other"]),
+        title: z.string().min(1).max(80).optional(),
+        source: z.enum(["file", "google", "icloud"]).optional(),
         readAt: z.iso.datetime(),
         rangeStart: z.iso.datetime(),
         rangeEnd: z.iso.datetime(),
@@ -52,7 +55,19 @@ export function readCalendarFile(
   from: Date,
   to: Date,
   readAt = new Date(),
+  displayTimeZone?: string,
 ): CalendarRead {
+  if (displayTimeZone) {
+    try {
+      new Intl.DateTimeFormat("en", { timeZone: displayTimeZone }).format(
+        readAt,
+      );
+    } catch {
+      throw Error(
+        "Choose a valid display timezone before reading this calendar.",
+      );
+    }
+  }
   if (text.length > 2_000_000)
     throw new Error("Choose a calendar file under 2 MB.");
   if (
@@ -104,8 +119,12 @@ export function readCalendarFile(
     }
     if (time.zone.tzid === "floating")
       warnings.add(
-        "Floating event times use this device’s timezone: " +
-          Intl.DateTimeFormat().resolvedOptions().timeZone +
+        "Floating event times use " +
+          (displayTimeZone
+            ? "the requested display timezone: "
+            : "this device’s timezone: ") +
+          (displayTimeZone ??
+            Intl.DateTimeFormat().resolvedOptions().timeZone) +
           ". Review the times before using them.",
       );
   }
@@ -122,8 +141,18 @@ export function readCalendarFile(
       return;
     checkTimeZone(start, event);
     checkTimeZone(end, event);
-    const begins = start.toJSDate(),
-      ends = end.toJSDate();
+    const resolve = (time: InstanceType<typeof ICAL.Time>) =>
+      displayTimeZone && (time.isDate || time.zone.tzid === "floating")
+        ? new Date(
+            calendarInstant(
+              time.toString().slice(0, 10),
+              time.isDate ? "00:00:00" : time.toString().slice(11, 19),
+              displayTimeZone,
+            ),
+          )
+        : time.toJSDate();
+    const begins = resolve(start),
+      ends = resolve(end);
     if (
       !Number.isFinite(+begins) ||
       !Number.isFinite(+ends) ||
@@ -231,6 +260,7 @@ export function readCalendarFile(
   return {
     id: calendar.trim(),
     provider,
+    source: "file",
     readAt: readAt.toISOString(),
     rangeStart: from.toISOString(),
     rangeEnd: to.toISOString(),

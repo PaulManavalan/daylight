@@ -42,6 +42,16 @@ Verification: 308 unit tests and the production build pass. Browser regressions 
 
 On November 24, the local status endpoints reported `configured:false` for both Notion and Google OAuth in a request without browser cookies. This establishes missing configuration in that local runtime, not the state of production credentials or the user's personal account authorization. Daylight's own OAuth setup is separate from a development-chat connector. No paid service was enabled.
 
+## iCloud read adapter — November 24
+
+The web app now has an iCloud CalDAV read connection with principal/home discovery, a selected-calendar range read and a separate review before importing the result into Daylight. The adapter confines credentials to fixed Apple calendar hosts, validates every redirect, bounds XML/body/range work, rejects unsupported declarations and preserves old snapshots when any event cannot be verified. Credentials are encrypted in a scoped, owner-bound HttpOnly cookie; no provider credentials are added to planner records, account documents or exports. Read-only is enforced in the action schema. Event writes, a durable cross-device credential vault and continuous reconciliation remain open.
+
+All-day and floating times can now resolve in an explicitly requested display timezone rather than inheriting a server timezone; clock-change ambiguities still fail for review. Calendar snapshots optionally preserve a readable title and file/Google/iCloud source label. Old snapshots remain compatible. The browser checks cover connection, read review/cancel, preferences merging, export credential exclusion, failed-read preservation, disconnect semantics, daily protected-time scheduling and mobile width. Unit tests cover crypto/owner/expiry/tamper behavior, foreign origins, body limits, discovery, XML rejection, redirect confinement and timezone conversion. The 321-test suite passes.
+
+The local preview's server-only encryption configuration was generated without adding Apple credentials; it is ignored by Git and is absent from the client static assets. An unauthenticated PROPFIND reached Apple's endpoint and returned 401. Real authorized account acceptance is still required. See [calendar integration setup and limits](calendar-integrations.md).
+
 ## Hosted-model verification remains open
+
+The November 24 retry reused the same approved model and isolated profile. WebGPU was available, but the weight host again failed DNS resolution in Edge and a weight HEAD request timed out. Inference was not reached; no paid fallback or different model was enabled.
 
 The November 22 real WebGPU retry found a usable GPU and successfully reached the approved Qwen model's configuration and runtime hosts. The weight redirect host `us.aws.cdn.hf.co` failed DNS resolution in Edge and timed out in a separate Node HEAD check. Actual browser inference was not reached. `tests/browser-day-model-live.cjs` reproduces the focused flow with local AI blocked, synthetic records and the existing isolated profile; its explicit download opt-in is still required. This evidence is a failed asset-delivery test, not proof that hosted chat works or that every user's network will fail. No different model or paid fallback was enabled.

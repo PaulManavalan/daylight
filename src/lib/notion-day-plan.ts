@@ -238,7 +238,7 @@ export function buildNotionDayPlan(
     );
   if (calendars.calendars.length)
     assumptions.push(
-      "Imported calendar events are protected snapshots, not live synchronization. Changes in Google or Apple need a fresh import.",
+      "Calendar events are protected saved reads, not continuous synchronization. Refresh connected sources or re-import files when events change.",
     );
   let conflicts = 0;
   for (let i = 0; i < fixed.length; i++)

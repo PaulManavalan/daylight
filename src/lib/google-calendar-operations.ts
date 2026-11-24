@@ -241,6 +241,8 @@ export async function readGoogleCalendar(
             {
               id: calendarId,
               provider: "google",
+              title: calendar.title.slice(0, 80),
+              source: "google",
               readAt: now.toISOString(),
               rangeStart: from,
               rangeEnd: to,

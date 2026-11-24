@@ -1018,11 +1018,16 @@ export default function NotionDailyPlanner() {
         />
       )}
       {personal.state && (
-        <details className={styles.connections}>
+        <details className={styles.connections} id="calendar-sources">
           <summary>
-            Calendars · {personal.state.calendars.calendars.length} imported ·
-            file transfer options
+            Calendars · {personal.state.calendars.calendars.length} saved
+            sources
           </summary>
+          <p>
+            <Link href="/day/preferences#calendar-connections">
+              Connect Google Calendar or iCloud →
+            </Link>
+          </p>
           <CalendarTransferPanel
             state={personal.state}
             save={personal.save}

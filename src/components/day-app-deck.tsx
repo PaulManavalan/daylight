@@ -73,10 +73,10 @@ export default function DayAppDeck({
       label: "Calendars",
       icon: CalendarDays,
       tone: "blue",
-      href: "/day/preferences",
+      href: "/day/preferences#calendar-connections",
       value: calendarValue,
       note: personal?.calendars.calendars.length
-        ? "Imported calendar snapshots"
+        ? "Saved calendar reads · refreshable"
         : "Google & Apple options",
     },
     {

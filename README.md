@@ -144,6 +144,10 @@ In local mode, choose **Backups → Restore a backup file** in the top bar and s
 
 After a restore, **Backups → Download previous workspace** exports the saved recovery copy as a regular version-1 backup when the previous data is valid. Damaged previous storage remains downloadable as a raw recovery copy. Local model choices are remembered per workspace and revalidated against the installed model list after reconnecting.
 
+### iCloud Calendar read connection
+
+`/day/preferences#icloud-calendar` now offers a reviewed iCloud CalDAV read flow using an Apple app-specific password. Server-only origin/encryption configuration is shown in `.env.example`; do not put an Apple account password or app-specific password in environment files. Choose a calendar and date window, review its events and explicitly use the saved read in the planner. Credentials stay outside planner records and exports. Event writes and continuous sync remain incomplete; real authenticated account acceptance is still required. See [calendar integration details](docs/calendar-integrations.md).
+
 ### SAT workspace
 
 The focused `/day/sat` studio also supports reviewed practice-time choices for a day, skill and duration. These join Notion homework in `/day` within the same focus allowance, around protected events. Changing a choice requires a fresh timetable review. Planned or elapsed practice never creates an answer attempt or work record. The account-document layer carries these choices across signed-in focused screens; real configured-account acceptance remains a launch gate. The home dashboard's module cards show saved selections and distinguish samples or imported snapshots from live connections.

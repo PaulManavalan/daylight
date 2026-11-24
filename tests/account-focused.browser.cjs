@@ -236,6 +236,9 @@ function ownerFrom(request) {
       await context.route("**/api/google-calendar", (r) =>
         r.fulfill({ json: { configured: false, connected: false } }),
       );
+      await context.route("**/api/icloud-calendar", (r) =>
+        r.fulfill({ json: { configured: false, connected: false } }),
+      );
       await context.route("**/api/notion", (r) =>
         r.fulfill({ json: { configured: false, connected: false } }),
       );

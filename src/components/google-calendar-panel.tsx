@@ -1,7 +1,10 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
-import { getSupabase } from "@/lib/supabase";
+import {
+  useAccountWorkspace,
+  accountAuthHeaders,
+} from "./account-workspace-context";
 import {
   calendarSnapshotSchema,
   replaceCalendar,
@@ -36,6 +39,7 @@ const localValue = (value: string) => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 export default function GoogleCalendarPanel({ state, save, disabled }: Props) {
+  const { owner } = useAccountWorkspace();
   const [status, setStatus] = useState<{
       configured: boolean;
       connected: boolean;
@@ -55,22 +59,30 @@ export default function GoogleCalendarPanel({ state, save, disabled }: Props) {
     [lastReceipt, setLastReceipt] = useState<GoogleEventReceipt | null>(null);
   const active = useRef(false),
     live = useRef(true),
+    requestController = useRef<AbortController | null>(null),
     latestState = useRef(state);
   latestState.current = state;
-  async function authHeaders(): Promise<Record<string, string>> {
-    const token = (await getSupabase()?.auth.getSession())?.data.session
-      ?.access_token;
-    return token ? { Authorization: "Bearer " + token } : {};
-  }
   async function call(body?: unknown) {
+    const controller = requestController.current;
+    const headers = await accountAuthHeaders(owner);
+    if (!live.current || controller?.signal.aborted)
+      throw Error(
+        "Your workspace changed. Reopen the current calendar connection.",
+      );
     const response = await fetch("/api/google-calendar", {
       method: body ? "POST" : "GET",
-      headers: { "content-type": "application/json", ...(await authHeaders()) },
+      headers: { "content-type": "application/json", ...headers },
       ...(body ? { body: JSON.stringify(body) } : {}),
       cache: "no-store",
-      signal: AbortSignal.timeout(60000),
+      signal: controller
+        ? AbortSignal.any([controller.signal, AbortSignal.timeout(60000)])
+        : AbortSignal.timeout(60000),
     });
     const data = await response.json();
+    if (!live.current || controller?.signal.aborted)
+      throw Error(
+        "Your workspace changed. Reopen the current calendar connection.",
+      );
     if (!response.ok)
       throw new Error(
         data.error ?? "Google Calendar could not finish this request.",
@@ -79,6 +91,7 @@ export default function GoogleCalendarPanel({ state, save, disabled }: Props) {
   }
   useEffect(() => {
     live.current = true;
+    requestController.current = new AbortController();
     void call()
       .then((data) => {
         if (live.current) setStatus(data);
@@ -88,8 +101,9 @@ export default function GoogleCalendarPanel({ state, save, disabled }: Props) {
       });
     return () => {
       live.current = false;
+      requestController.current?.abort();
     };
-  }, []);
+  }, [owner]);
   async function run(action: () => Promise<void>) {
     if (active.current || disabled) return;
     active.current = true;
@@ -99,13 +113,17 @@ export default function GoogleCalendarPanel({ state, save, disabled }: Props) {
     try {
       await action();
     } catch (e) {
-      setError((e as Error).message);
+      if (live.current) setError((e as Error).message);
     } finally {
       active.current = false;
       if (live.current) setBusy(false);
     }
   }
   async function invalidateSavedReads() {
+    if (!live.current || requestController.current?.signal.aborted)
+      throw Error(
+        "Your workspace changed. Refresh the calendar in the current account.",
+      );
     const current = latestState.current,
       calendars = current.calendars.calendars.map((c) =>
         c.id.startsWith("google-live:") ? { ...c, needsRefresh: true } : c,
@@ -485,10 +503,15 @@ export default function GoogleCalendarPanel({ state, save, disabled }: Props) {
               ? "Deletion removes this event from Google Calendar after confirmation."
               : "Google must confirm the action before Daylight marks it saved. If a request fails, retry this same proposal to avoid duplicates."}
           </p>
+          <p className={styles.muted}>
+            Your saved Google calendar reads will need a refresh after this
+            attempt, including if its final confirmation is lost.
+          </p>
           <button
             disabled={locked}
             onClick={() =>
               void run(async () => {
+                await invalidateSavedReads();
                 const data = await call({
                     op: review.remove
                       ? "delete"
@@ -523,7 +546,6 @@ export default function GoogleCalendarPanel({ state, save, disabled }: Props) {
                           : "creation") +
                     ". Read and review the calendar again before replanning.",
                 );
-                await invalidateSavedReads();
               })
             }
           >

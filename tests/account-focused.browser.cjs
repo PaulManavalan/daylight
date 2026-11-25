@@ -730,6 +730,52 @@ function ownerFrom(request) {
       B + ":personal",
       (r) => r?.payload.displayName === "Reviewed local B",
     );
+    let releaseGoogle, googleStarted, googleFinished;
+    const waitingGoogle = new Promise((resolve) => {
+        releaseGoogle = resolve;
+      }),
+      startedGoogle = new Promise((resolve) => {
+        googleStarted = resolve;
+      }),
+      finishedGoogle = new Promise((resolve) => {
+        googleFinished = resolve;
+      }),
+      googleOwners = [];
+    await one.context.route("**/api/google-calendar", async (route) => {
+      const owner = ownerFrom(route.request());
+      googleOwners.push(owner);
+      if (route.request().method() === "GET")
+        return route.fulfill({
+          json: { configured: true, connected: owner === A, canWrite: false },
+        });
+      assert.equal(
+        owner,
+        A,
+        "The Google request must use the displayed account",
+      );
+      assert.equal(route.request().postDataJSON().op, "calendars");
+      googleStarted();
+      await waitingGoogle;
+      try {
+        await route.fulfill({
+          json: {
+            calendars: [
+              {
+                id: "late@example.test",
+                title: "Synthetic late Google calendar",
+                timeZone: "UTC",
+                accessRole: "reader",
+                primary: false,
+              },
+            ],
+          },
+        });
+      } catch {
+        /* The signed-out browser may already have aborted the request. */
+      } finally {
+        googleFinished();
+      }
+    });
     await one.page.goto(server.url + "/day/preferences");
     await one.page.setViewportSize({ width: 390, height: 844 });
     await one.page.getByRole("region", { name: "Account sync" }).waitFor();
@@ -744,12 +790,26 @@ function ownerFrom(request) {
       fullPage: true,
     });
     await one.page
+      .getByRole("button", { name: "Choose or refresh calendars", exact: true })
+      .click();
+    await startedGoogle;
+    await one.page
       .getByRole("button", { name: "Sign out", exact: true })
       .click();
     await one.page
       .getByLabel("Workspace identity")
       .getByText("Local workspace · this device", { exact: true })
       .waitFor();
+    releaseGoogle();
+    await finishedGoogle;
+    assert.equal(
+      await one.page
+        .getByText("Synthetic late Google calendar", { exact: true })
+        .count(),
+      0,
+      "Late account calendar data must not enter the local workspace",
+    );
+    assert.ok(googleOwners.includes(A));
     await one.page.goto(server.url + "/day/preferences");
     assert.equal(
       await one.page.getByLabel("Your name", { exact: true }).inputValue(),

@@ -386,9 +386,18 @@ export default function PersonalPreferences() {
           </form>
         )}
         {workspace.error && (
-          <p role="alert" className={styles.error}>
-            {workspace.error}
-          </p>
+          <div>
+            <p role="alert" className={styles.error}>
+              {workspace.error}
+            </p>
+            <p className={styles.muted}>
+              Reopening uses your saved settings and discards unsaved form
+              edits. It does not erase saved records.
+            </p>
+            <button type="button" onClick={() => location.reload()}>
+              Reload saved settings
+            </button>
+          </div>
         )}
         {message && <p role="status">{message}</p>}
       </section>

@@ -146,6 +146,61 @@ const { startBrowserServer } = require("./browser-server.cjs");
       .getByRole("button", { name: "Review event", exact: true })
       .click();
     assert.equal(calls.filter((x) => x === "create").length, 0);
+    const beforeBlockedWrite = await page.evaluate(() =>
+      localStorage.getItem("daylight.personal-preview.v1"),
+    );
+    await page.evaluate(() => {
+      window.__calendarOriginalSetItem = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (key, value) {
+        if (key === "daylight.personal-preview.v1")
+          throw Error("Synthetic storage failure");
+        return window.__calendarOriginalSetItem.call(this, key, value);
+      };
+    });
+    await panel
+      .getByRole("button", {
+        name: "Save reviewed event to Google Calendar",
+        exact: true,
+      })
+      .click();
+    await panel
+      .getByRole("alert")
+      .filter({ hasText: "could not save" })
+      .waitFor();
+    assert.equal(
+      calls.filter((x) => x === "create").length,
+      0,
+      "A failed freshness save must prevent the external write",
+    );
+    assert.equal(
+      await page.evaluate(() =>
+        localStorage.getItem("daylight.personal-preview.v1"),
+      ),
+      beforeBlockedWrite,
+    );
+    await page.evaluate(() => {
+      Storage.prototype.setItem = window.__calendarOriginalSetItem;
+      delete window.__calendarOriginalSetItem;
+    });
+    await page
+      .getByRole("button", { name: "Reload saved settings", exact: true })
+      .click();
+    await panel
+      .getByRole("button", { name: "Choose or refresh calendars", exact: true })
+      .click();
+    await panel.getByLabel("Google calendar to use").selectOption(row.id);
+    await panel
+      .getByLabel("Event title", { exact: true })
+      .fill("Synthetic review");
+    await panel
+      .getByLabel("Event starts", { exact: true })
+      .fill("2026-11-21T14:00");
+    await panel
+      .getByLabel("Event ends", { exact: true })
+      .fill("2026-11-21T14:30");
+    await panel
+      .getByRole("button", { name: "Review event", exact: true })
+      .click();
     await panel
       .getByRole("button", {
         name: "Save reviewed event to Google Calendar",
@@ -156,6 +211,14 @@ const { startBrowserServer } = require("./browser-server.cjs");
       .getByRole("alert")
       .filter({ hasText: "may have received" })
       .waitFor();
+    state = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("daylight.personal-preview.v1")),
+    );
+    assert.equal(
+      state.calendars.calendars[0].needsRefresh,
+      true,
+      "An uncertain write must invalidate the old snapshot before retry",
+    );
     await panel
       .getByRole("button", {
         name: "Save reviewed event to Google Calendar",

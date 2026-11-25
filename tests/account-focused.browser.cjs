@@ -730,7 +730,18 @@ function ownerFrom(request) {
       B + ":personal",
       (r) => r?.payload.displayName === "Reviewed local B",
     );
-    let releaseGoogle, googleStarted, googleFinished;
+    let releaseGoogle,
+      googleStarted,
+      googleFinished,
+      holdGoogle = false,
+      googleCreates = 0;
+    const googleRow = {
+      id: "late@example.test",
+      title: "Synthetic late Google calendar",
+      timeZone: "UTC",
+      accessRole: "owner",
+      primary: false,
+    };
     const waitingGoogle = new Promise((resolve) => {
         releaseGoogle = resolve;
       }),
@@ -746,14 +757,28 @@ function ownerFrom(request) {
       googleOwners.push(owner);
       if (route.request().method() === "GET")
         return route.fulfill({
-          json: { configured: true, connected: owner === A, canWrite: false },
+          json: {
+            configured: true,
+            connected: owner === A,
+            canWrite: owner === A,
+          },
         });
       assert.equal(
         owner,
         A,
         "The Google request must use the displayed account",
       );
-      assert.equal(route.request().postDataJSON().op, "calendars");
+      const action = route.request().postDataJSON();
+      if (action.op === "create") {
+        googleCreates++;
+        return route.fulfill({
+          status: 502,
+          json: { error: "Synthetic uncertain creation" },
+        });
+      }
+      assert.equal(action.op, "calendars");
+      if (!holdGoogle)
+        return route.fulfill({ json: { calendars: [googleRow] } });
       googleStarted();
       await waitingGoogle;
       try {
@@ -789,6 +814,56 @@ function ownerFrom(request) {
       path: "artifacts/account-workspace-mobile.png",
       fullPage: true,
     });
+    const googlePanel = one.page.getByRole("region", {
+      name: "Live Google Calendar",
+    });
+    await googlePanel
+      .getByRole("button", { name: "Choose or refresh calendars", exact: true })
+      .click();
+    await googlePanel
+      .getByLabel("Google calendar to use")
+      .selectOption(googleRow.id);
+    await googlePanel
+      .getByLabel("Event title", { exact: true })
+      .fill("Synthetic unfinished account event");
+    await googlePanel
+      .getByLabel("Event starts", { exact: true })
+      .fill("2026-11-24T14:00");
+    await googlePanel
+      .getByLabel("Event ends", { exact: true })
+      .fill("2026-11-24T14:30");
+    await googlePanel
+      .getByRole("button", { name: "Review event", exact: true })
+      .click();
+    await googlePanel
+      .getByRole("button", {
+        name: "Save reviewed event to Google Calendar",
+        exact: true,
+      })
+      .click();
+    await googlePanel
+      .getByRole("alert")
+      .filter({ hasText: "Synthetic uncertain creation" })
+      .waitFor();
+    await waitForDocument(
+      A + ":personal",
+      (row) => row?.payload.calendars.pendingGoogleCreates?.length === 1,
+    );
+    await two.page.goto(server.url + "/day/preferences");
+    await two.page
+      .getByRole("region", { name: "Unfinished Google event requests" })
+      .getByText("Synthetic unfinished account event", { exact: true })
+      .waitFor();
+    await one.page.reload();
+    await one.page
+      .getByRole("region", { name: "Unfinished Google event requests" })
+      .waitFor();
+    assert.equal(
+      googleCreates,
+      1,
+      "Reloading a saved account request must not send a write",
+    );
+    holdGoogle = true;
     await one.page
       .getByRole("button", { name: "Choose or refresh calendars", exact: true })
       .click();

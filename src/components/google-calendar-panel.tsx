@@ -23,6 +23,10 @@ import { addDays, dayAt } from "@/lib/scheduling";
 import type { PersonalWorkspace } from "@/lib/personal-workspace";
 import styles from "./notion-daily-planner.module.css";
 import css from "./google-calendar-panel.module.css";
+import {
+  stageGoogleCreate,
+  resolveGoogleCreate,
+} from "@/lib/google-calendar-recovery";
 type Props = {
   state: PersonalWorkspace;
   save: (state: PersonalWorkspace) => Promise<PersonalWorkspace>;
@@ -56,6 +60,7 @@ export default function GoogleCalendarPanel({ state, save, disabled }: Props) {
   const [form, setForm] = useState({ title: "", start: "", end: "" }),
     [target, setTarget] = useState<GoogleEventReceipt | null>(null),
     [review, setReview] = useState<Review | null>(null),
+    [attemptedRequest, setAttemptedRequest] = useState<string | null>(null),
     [lastReceipt, setLastReceipt] = useState<GoogleEventReceipt | null>(null);
   const active = useRef(false),
     live = useRef(true),
@@ -119,21 +124,42 @@ export default function GoogleCalendarPanel({ state, save, disabled }: Props) {
       if (live.current) setBusy(false);
     }
   }
-  async function invalidateSavedReads() {
+  async function invalidateSavedReads(proposal: Review) {
     if (!live.current || requestController.current?.signal.aborted)
       throw Error(
         "Your workspace changed. Refresh the calendar in the current account.",
       );
     const current = latestState.current,
-      calendars = current.calendars.calendars.map((c) =>
-        c.id.startsWith("google-live:") ? { ...c, needsRefresh: true } : c,
-      );
-    if (calendars.some((c) => c.needsRefresh))
-      await save({
-        ...current,
-        calendars: { ...current.calendars, calendars },
-      });
+      calendars =
+        proposal.target || proposal.remove
+          ? {
+              ...current.calendars,
+              calendars: current.calendars.calendars.map((c) =>
+                c.id.startsWith("google-live:")
+                  ? { ...c, needsRefresh: true }
+                  : c,
+              ),
+            }
+          : stageGoogleCreate(current.calendars, {
+              owner,
+              draft: proposal.draft,
+              calendarTitle: calendarsForReview(proposal.draft.calendarId),
+              attemptedAt: new Date().toISOString(),
+            });
+    latestState.current = await save({
+      ...current,
+      calendars,
+    });
     setPreview(null);
+  }
+  function calendarsForReview(id: string) {
+    return (
+      calendars.find((row) => row.id === id)?.title ??
+      latestState.current.calendars.pendingGoogleCreates?.find(
+        (row) => row.draft.calendarId === id,
+      )?.calendarTitle ??
+      "Selected Google calendar"
+    );
   }
   function prepare(
     remove = false,
@@ -158,6 +184,7 @@ export default function GoogleCalendarPanel({ state, save, disabled }: Props) {
         end: remove && receipt ? receipt.end : resolve(form.end),
       });
       setReview({ draft, target: receipt, remove });
+      setAttemptedRequest(null);
       setError("");
       setLastReceipt(null);
     } catch (e) {
@@ -478,6 +505,70 @@ export default function GoogleCalendarPanel({ state, save, disabled }: Props) {
           )}
         </>
       )}
+      {(state.calendars.pendingGoogleCreates ?? []).filter(
+        (row) => row.owner === owner,
+      ).length > 0 && (
+        <section aria-label="Unfinished Google event requests">
+          <h3>Check an unfinished event request</h3>
+          <p>
+            The result of these attempts is unconfirmed. They may already exist
+            in Google. Reopen the same review to check or retry without a new
+            request ID. Nothing is sent automatically.
+          </p>
+          {(state.calendars.pendingGoogleCreates ?? [])
+            .filter((row) => row.owner === owner)
+            .map((row) => (
+              <article key={row.draft.requestId}>
+                <p>
+                  <strong>{row.draft.title}</strong> · {row.calendarTitle}
+                  <br />
+                  {new Date(row.draft.start).toLocaleString()}
+                </p>
+                <button
+                  disabled={
+                    locked || !!review || !status?.connected || !status.canWrite
+                  }
+                  onClick={() =>
+                    void run(async () => {
+                      const data = await call({ op: "calendars" });
+                      const rows = z
+                        .array(googleCalendarRowSchema)
+                        .parse(data.calendars);
+                      const calendar = rows.find(
+                        (calendar) => calendar.id === row.draft.calendarId,
+                      );
+                      if (
+                        !calendar ||
+                        !["owner", "writer"].includes(calendar.accessRole)
+                      )
+                        throw Error(
+                          "The saved request's calendar is not currently writable. Check the connected Google account before retrying.",
+                        );
+                      setCalendars(rows);
+                      setSelected(row.draft.calendarId);
+                      setReview({
+                        draft: row.draft,
+                        target: null,
+                        remove: false,
+                      });
+                      setAttemptedRequest(row.draft.requestId);
+                      setLastReceipt(null);
+                      setError("");
+                    })
+                  }
+                >
+                  Review unfinished event: {row.draft.title}
+                </button>
+              </article>
+            ))}
+          {!status?.canWrite && (
+            <p>
+              Connect Google with event editing enabled before reviewing a
+              retry.
+            </p>
+          )}
+        </section>
+      )}
       {review && (
         <section aria-label="Review Google Calendar action">
           <h3>
@@ -494,10 +585,7 @@ export default function GoogleCalendarPanel({ state, save, disabled }: Props) {
             {new Date(review.draft.start).toLocaleString()}–
             {new Date(review.draft.end).toLocaleString()} ({zone})
           </p>
-          <p>
-            {calendars.find((c) => c.id === review.draft.calendarId)?.title ??
-              "Selected calendar"}
-          </p>
+          <p>{calendarsForReview(review.draft.calendarId)}</p>
           <p className={styles.muted}>
             {review.remove
               ? "Deletion removes this event from Google Calendar after confirmation."
@@ -511,7 +599,8 @@ export default function GoogleCalendarPanel({ state, save, disabled }: Props) {
             disabled={locked}
             onClick={() =>
               void run(async () => {
-                await invalidateSavedReads();
+                await invalidateSavedReads(review);
+                setAttemptedRequest(review.draft.requestId);
                 const data = await call({
                     op: review.remove
                       ? "delete"
@@ -526,6 +615,18 @@ export default function GoogleCalendarPanel({ state, save, disabled }: Props) {
                     ...(review.remove ? { confirmDelete: true } : {}),
                   }),
                   receipt = googleReceiptSchema.parse(data.receipt);
+                if (!review.target && !review.remove) {
+                  const current = latestState.current;
+                  latestState.current = await save({
+                    ...current,
+                    calendars: resolveGoogleCreate(
+                      current.calendars,
+                      owner,
+                      review.draft.requestId,
+                      receipt,
+                    ),
+                  });
+                }
                 setLastReceipt(receipt);
                 setManaged((previous) =>
                   receipt.outcome === "deleted"
@@ -533,6 +634,7 @@ export default function GoogleCalendarPanel({ state, save, disabled }: Props) {
                     : [...previous.filter((e) => e.id !== receipt.id), receipt],
                 );
                 setReview(null);
+                setAttemptedRequest(null);
                 setTarget(null);
                 setForm({ title: "", start: "", end: "" });
                 setMessage(
@@ -554,7 +656,9 @@ export default function GoogleCalendarPanel({ state, save, disabled }: Props) {
               : "Save reviewed event to Google Calendar"}
           </button>
           <button disabled={locked} onClick={() => setReview(null)}>
-            Keep Google Calendar unchanged
+            {attemptedRequest === review.draft.requestId
+              ? "Close review; outcome still unconfirmed"
+              : "Keep Google Calendar unchanged"}
           </button>
         </section>
       )}

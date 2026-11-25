@@ -34,6 +34,15 @@ export const googleEventDraftSchema = z
     end: new Date(e.end).toISOString(),
   }));
 export type GoogleEventDraft = z.infer<typeof googleEventDraftSchema>;
+export const pendingGoogleCreateSchema = z
+  .object({
+    owner: z.union([z.literal("local-demo"), z.uuid()]),
+    draft: googleEventDraftSchema,
+    calendarTitle: z.string().trim().min(1).max(300),
+    attemptedAt: z.iso.datetime(),
+  })
+  .strict();
+export type PendingGoogleCreate = z.infer<typeof pendingGoogleCreateSchema>;
 export const googleReceiptSchema = z.object({
   id: z.string().min(1).max(1024),
   etag: z.string().min(1).max(1024),

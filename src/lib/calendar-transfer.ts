@@ -3,6 +3,7 @@ import { z } from "zod";
 import { addDays, dateKey, dayAt, type FixedBlock } from "./scheduling";
 import type { NotionDayPlan } from "./notion-day-plan";
 import { calendarInstant } from "./calendar-timezone";
+import { pendingGoogleCreateSchema } from "./google-calendar-data";
 
 export const calendarEventSchema = z
   .object({
@@ -23,6 +24,15 @@ export const calendarEventSchema = z
 export type CalendarEvent = z.infer<typeof calendarEventSchema>;
 export const calendarSnapshotSchema = z.object({
   version: z.literal(1),
+  pendingGoogleCreates: z
+    .array(pendingGoogleCreateSchema)
+    .max(30)
+    .refine(
+      (rows) =>
+        new Set(rows.map((row) => row.draft.requestId)).size === rows.length,
+      "Pending event request IDs must be unique.",
+    )
+    .optional(),
   calendars: z
     .array(
       z.object({

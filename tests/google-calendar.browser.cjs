@@ -219,6 +219,26 @@ const { startBrowserServer } = require("./browser-server.cjs");
       true,
       "An uncertain write must invalidate the old snapshot before retry",
     );
+    assert.equal(state.calendars.pendingGoogleCreates.length, 1);
+    assert.equal(
+      state.calendars.pendingGoogleCreates[0].draft.requestId,
+      requests[0],
+    );
+    await page.reload();
+    await panel
+      .getByRole("region", { name: "Unfinished Google event requests" })
+      .waitFor();
+    assert.equal(
+      requests.length,
+      1,
+      "Reopening never retries an event automatically",
+    );
+    await panel
+      .getByRole("button", {
+        name: "Review unfinished event: Synthetic review",
+        exact: true,
+      })
+      .click();
     await panel
       .getByRole("button", {
         name: "Save reviewed event to Google Calendar",
@@ -235,6 +255,7 @@ const { startBrowserServer } = require("./browser-server.cjs");
       JSON.parse(localStorage.getItem("daylight.personal-preview.v1")),
     );
     assert.equal(state.calendars.calendars[0].needsRefresh, true);
+    assert.deepEqual(state.calendars.pendingGoogleCreates, []);
     assert.equal(state.displayName, "Synthetic preference after calendar read");
     await panel
       .getByRole("button", { name: "Edit Synthetic review", exact: true })

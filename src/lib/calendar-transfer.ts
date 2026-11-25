@@ -292,14 +292,14 @@ export function calendarBusyToday(
   for (const calendar of calendarSnapshotSchema.parse(snapshot).calendars) {
     if (calendar.needsRefresh)
       throw new Error(
-        `Refresh ${calendar.id}: its source events changed after the last read.`,
+        `Refresh ${calendar.title ?? calendar.id}: its source events changed after the last read.`,
       );
     if (
       +from < Date.parse(calendar.rangeStart) ||
       +to > Date.parse(calendar.rangeEnd)
     )
       throw new Error(
-        `Refresh ${calendar.id}: its imported date range does not cover today.`,
+        `Refresh ${calendar.title ?? calendar.id}: its saved date range does not cover today.`,
       );
     for (const event of calendar.events) {
       if (Date.parse(event.end) <= +from || Date.parse(event.start) >= +to)

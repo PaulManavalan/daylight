@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { ICloudCalDavClient, escapeDav } from "../src/lib/icloud-caldav";
 import {
   discoverICloudCalendars,
+  listICloudCalendars,
   readICloudCalendar,
 } from "../src/lib/icloud-calendar-operations";
 import { readCalendarFile } from "../src/lib/calendar-transfer";
@@ -72,6 +73,35 @@ test("provider reads produce a reviewed snapshot with explicit timezone and stab
   assert.equal(result.events[0].allDay, true);
   assert.equal(result.events[0].start, "2026-11-23T11:00:00.000Z");
   assert.equal(result.events[0].end, "2026-11-24T11:00:00.000Z");
+});
+
+test("calendar selection excludes task-only collections and recognizes full DAV privileges", async () => {
+  const collections = [
+    ["tasks/", '<c:comp name="VTODO"/>', "read"],
+    ["events/", '<c:comp name="VEVENT"/><c:comp name="VTODO"/>', "all"],
+    ["readonly/", '<c:comp name="VEVENT"/>', "read"],
+  ];
+  const body = collections
+    .map(
+      ([path, components, privilege]) =>
+        multistatus(
+          home + path,
+          `<d:resourcetype><c:calendar/></d:resourcetype><c:supported-calendar-component-set>${components}</c:supported-calendar-component-set><d:current-user-privilege-set><d:privilege><d:${privilege}/></d:privilege></d:current-user-privilege-set>`,
+        ).match(/<d:response>[\s\S]*<\/d:response>/)![0],
+    )
+    .join("");
+  const api = client(
+    () =>
+      `<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">${body}</d:multistatus>`,
+  );
+  const calendars = await listICloudCalendars(api, home);
+  assert.deepEqual(
+    calendars.map((row) => [row.id, row.canWrite]),
+    [
+      [home + "events/", true],
+      [home + "readonly/", false],
+    ],
+  );
 });
 test("an unlisted calendar or incomplete event response never replaces the old snapshot", async () => {
   const api = client((_url, method) =>

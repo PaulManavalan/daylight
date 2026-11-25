@@ -51,6 +51,7 @@ export interface DavNode {
   local: string;
   text: string;
   children: DavNode[];
+  attributes: Record<string, string>;
 }
 export const davName = (uri: string, local: string) => `{${uri}}${local}`;
 export const DAV = "DAV:",
@@ -104,6 +105,16 @@ export function parseDavMultistatus(xml: string): DavResponse[] {
       local: tag.local,
       text: "",
       children: [],
+      attributes: Object.fromEntries(
+        Object.values(tag.attributes)
+          .filter(
+            (attribute) => typeof attribute === "object" && !attribute.uri,
+          )
+          .map((attribute) => {
+            const value = attribute as sax.QualifiedAttribute;
+            return [value.local, value.value];
+          }),
+      ),
     };
     if (stack.length) stack.at(-1)!.children.push(node);
     else if (root)

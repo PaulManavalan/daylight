@@ -86,6 +86,19 @@ export async function listICloudCalendars(
   for (const item of parseDavMultistatus(response.text)) {
     const type = item.properties.get(davName(DAV, "resourcetype"));
     if (!type || !davChild(type, CALDAV, "calendar")) continue;
+    const components = item.properties.get(
+      davName(CALDAV, "supported-calendar-component-set"),
+    );
+    if (
+      components &&
+      !components.children.some(
+        (node) =>
+          node.uri === CALDAV &&
+          node.local === "comp" &&
+          node.attributes.name?.toUpperCase() === "VEVENT",
+      )
+    )
+      continue;
     const id = icloudURL(item.href, response.url).href;
     if (seen.has(id))
       throw new ICloudCalendarError(
@@ -112,6 +125,7 @@ export async function listICloudCalendars(
           (title ? xmlText(title).trim() : "iCloud calendar").slice(0, 80) ||
           "iCloud calendar",
         canWrite:
+          granted.includes("all") ||
           granted.includes("write") ||
           (granted.includes("write-content") && granted.includes("bind")),
       }),
